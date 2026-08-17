@@ -1,0 +1,1415 @@
+<!doctype html>
+<!--
+  UA · 个人知识库 — Android MVP 应用
+  四屏：首页 / 收藏 / 我的 / 笔记详情；底部 tab 导航；新建笔记、AI 问答、分享等底部 sheet。
+  由 Open Design 移动端原型派生为 Capacitor Android WebView 全屏应用。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UA 个人知识库</title>
+  <link rel="icon" href="data:," />
+  <style>
+    :root {
+      --bg:          oklch(96.26% 0.007 286.3);   /* iOS systemGroupedBackground */
+      --surface:     oklch(100% 0 0);
+      --fg:          oklch(0% 0 0);
+      --muted:       oklch(53.26% 0.006 286.2);    /* 白底 5.23:1 */
+      --border:      oklch(88.4% 0.008 286.2);
+      --accent:      oklch(60.28% 0.218 257.4);    /* 系统蓝 #007AFF */
+      --accent-text: color-mix(in oklch, var(--accent) 76%, black); /* 链接文字 ≥4.5:1 */
+      --accent-soft: color-mix(in oklch, var(--accent) 14%, transparent);
+      --fg-soft:     color-mix(in oklch, var(--fg) 6%, transparent);
+      --field:       oklch(93.55% 0.007 286.3);    /* 搜索框填充 */
+      --placeholder: oklch(48.36% 0.008 286.1);    /* 字段底 5.33:1 */
+      --scrim:       oklch(18% 0.02 286 / 34%);
+
+      --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+      --font-body:    -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+      --font-mono:    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+      --fs-h1: 30px;
+      --fs-h2: 20px;
+      --fs-h3: 17px;
+      --fs-body: 15px;
+      --fs-meta: 12px;
+      --radius-card: 16px;
+    }
+    .screen[data-theme="dark"] {
+      --bg: oklch(0% 0 0);
+      --surface: oklch(22.73% 0.004 286.1);
+      --fg: oklch(100% 0 0);
+      --muted: oklch(68.19% 0.010 286.1);
+      --border: oklch(34.14% 0.003 286.2);
+      --accent: oklch(62.43% 0.206 255.5);
+      --accent-text: var(--accent);
+      --field: oklch(22.73% 0.004 286.1);
+      --placeholder: oklch(68.19% 0.010 286.1);
+      --scrim: oklch(8% 0.02 286 / 55%);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      background: radial-gradient(60% 80% at 50% 0%, color-mix(in oklch, var(--accent) 6%, var(--bg)) 0%, var(--bg) 60%);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: var(--fs-body);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      display: grid;
+      place-items: center;
+      padding: 32px 16px;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+    .hidden { display: none !important; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+
+    .stage { display: flex; flex-direction: column; align-items: center; gap: 24px; }
+    .caption {
+      font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .caption strong { color: var(--fg); font-weight: 600; }
+
+    /* ─── device frame（seed） ─────────────────────────────────────── */
+    .device {
+      position: relative; width: 390px; height: 844px; border-radius: 56px; padding: 12px;
+      background: linear-gradient(160deg, #2a2a2c 0%, #1a1a1c 50%, #0e0e10 100%);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.04) inset,
+        0 0 0 2px #000 inset,
+        0 28px 60px -12px rgba(0,0,0,0.45),
+        0 8px 20px -8px rgba(0,0,0,0.35);
+      isolation: isolate;
+    }
+    .device::before, .device::after {
+      content: ''; position: absolute; width: 3px; pointer-events: none;
+      background: linear-gradient(to bottom, transparent 0%, rgba(255,255,255,0.06) 8%, transparent 16%, transparent 84%, rgba(255,255,255,0.04) 92%, transparent 100%);
+      top: 100px; bottom: 100px;
+    }
+    .device::before { left: -1px; } .device::after { right: -1px; }
+    .island {
+      position: absolute; top: 22px; left: 50%; transform: translateX(-50%);
+      width: 124px; height: 36px; background: #000; border-radius: 999px; z-index: 5;
+    }
+    .btn-rail { position: absolute; width: 4px; background: #0a0a0c; border-radius: 2px; }
+    .btn-rail.left-1  { left: -3px; top: 174px; height: 32px; }
+    .btn-rail.left-2  { left: -3px; top: 220px; height: 60px; }
+    .btn-rail.left-3  { left: -3px; top: 290px; height: 60px; }
+    .btn-rail.right-1 { right: -3px; top: 250px; height: 100px; }
+
+    /* ─── screen surface ───────────────────────────────────────────── */
+    .screen {
+      position: relative; width: 100%; height: 100%;
+      background: var(--bg); border-radius: 44px; overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    .statusbar {
+      flex: 0 0 47px; padding: 18px 26px 0; position: relative; z-index: 25;
+      display: flex; align-items: flex-start; justify-content: space-between;
+      font-size: 15px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em;
+    }
+    .statusbar .right { display: inline-flex; align-items: center; gap: 6px; }
+    .statusbar svg { width: 17px; height: 11px; fill: var(--fg); }
+    .statusbar .battery { width: 25px; }
+
+    /* ─── view stack ───────────────────────────────────────────────── */
+    .views { position: relative; flex: 1 1 auto; min-height: 0; }
+    .view {
+      position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden;
+      -webkit-overflow-scrolling: touch; padding: 4px 0 28px;
+      opacity: 0; visibility: hidden; transform: translateY(8px);
+      transition: opacity .22s ease-out, transform .22s ease-out, visibility 0s linear .22s;
+    }
+    .view.active { opacity: 1; visibility: visible; transform: none; transition: opacity .22s ease-out, transform .22s ease-out; }
+    .view::-webkit-scrollbar { display: none; }
+
+    /* ─── primitives ───────────────────────────────────────────────── */
+    .pad { padding-inline: 20px; }
+    .stack { display: flex; flex-direction: column; gap: 16px; }
+    .row { display: flex; align-items: center; gap: 12px; }
+    .row-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    .header { padding: 8px 20px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .header h1 {
+      font-family: var(--font-display); font-size: var(--fs-h1); font-weight: 800;
+      letter-spacing: -0.025em; line-height: 1.1; margin: 0;
+    }
+    .greeting {
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em;
+      color: var(--muted); margin: 0 0 5px;
+    }
+    .icon-btn {
+      width: 40px; height: 40px; border-radius: 999px;
+      background: var(--surface); border: 1px solid var(--border);
+      display: grid; place-items: center; color: var(--fg);
+      transition: background .15s;
+    }
+    .icon-btn:hover { background: var(--fg-soft); }
+    .icon-btn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+
+    .h2 { font-family: var(--font-display); font-size: var(--fs-h2); letter-spacing: -0.02em; line-height: 1.2; margin: 0; }
+    .h3 { font-size: var(--fs-h3); font-weight: 600; line-height: 1.3; margin: 0; }
+    .meta { font-size: var(--fs-meta); color: var(--muted); }
+    .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 16px; }
+
+    /* chips / tags */
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 9px; background: var(--surface); color: var(--muted);
+      border: 1px solid var(--border); border-radius: 999px;
+      font-size: 11px; line-height: 1; white-space: nowrap;
+    }
+    .chip-mono { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; }
+    .chip-link { color: var(--accent-text); border-color: color-mix(in oklch, var(--accent) 35%, var(--border)); cursor: pointer; }
+    .chip-link:hover { background: var(--accent-soft); }
+    .tag {
+      display: inline-flex; padding: 4px 10px; background: transparent;
+      color: var(--muted); border: 1px solid var(--border); border-radius: 999px; font-size: 12px;
+    }
+
+    /* buttons */
+    .btn-primary {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      min-height: 48px; padding: 12px 20px; background: var(--accent); color: #fff;
+      border-radius: 14px; font-size: 16px; font-weight: 600; letter-spacing: -0.005em;
+      transition: background .15s;
+    }
+    .btn-primary:hover  { background: color-mix(in oklch, var(--accent) 86%, black); }
+    .btn-primary:active { background: color-mix(in oklch, var(--accent) 76%, black); }
+    .btn-primary:disabled { opacity: .55; cursor: default; }
+    .btn-primary svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
+    .btn-secondary {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      min-height: 48px; padding: 12px 20px; background: var(--surface); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 14px; font-size: 15px; font-weight: 500;
+      transition: background .15s;
+    }
+    .btn-secondary:hover { background: var(--fg-soft); }
+    .btn-secondary svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+
+    /* search bar */
+    .search-bar {
+      position: relative; display: flex; align-items: center;
+      background: var(--field); border-radius: 12px; height: 44px; padding: 0 10px;
+    }
+    .search-ic { position: absolute; left: 13px; width: 17px; height: 17px; stroke: var(--muted); fill: none; stroke-width: 1.8; pointer-events: none; }
+    .search-bar input {
+      flex: 1; height: 100%; border: 0; background: transparent; outline: 0;
+      font: inherit; font-size: 16px; color: var(--fg); padding: 0 32px 0 34px;
+      -webkit-appearance: none;
+    }
+    .search-bar input::placeholder { color: var(--placeholder); }
+    .search-bar input::-webkit-search-cancel-button { display: none; }
+    .clear-btn {
+      position: absolute; right: 8px; width: 28px; height: 28px; border-radius: 999px;
+      background: color-mix(in oklch, var(--fg) 14%, transparent);
+      display: grid; place-items: center; color: var(--surface);
+    }
+    .clear-btn svg { width: 12px; height: 12px; stroke: currentColor; stroke-width: 2.4; fill: none; }
+
+    /* quick actions */
+    .quick { min-height: 56px; font-size: 15px; border-radius: 16px; }
+
+    /* section heads */
+    .section-head { margin: 2px 2px 10px; }
+    .section-head h2 {
+      font-family: var(--font-display); font-size: 17px; font-weight: 700;
+      letter-spacing: -0.01em; margin: 0; line-height: 1.2;
+    }
+
+    /* note cards */
+    .note-list { display: flex; flex-direction: column; gap: 10px; }
+    .note-card {
+      display: block; width: 100%; text-align: left;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);
+      padding: 14px 16px; cursor: pointer;
+      transition: background .15s, border-color .15s;
+    }
+    .note-card:hover { border-color: color-mix(in oklch, var(--fg) 14%, var(--border)); }
+    .note-card:active { background: var(--fg-soft); }
+    .note-title { margin: 0 0 5px; font-size: 15.5px; font-weight: 600; line-height: 1.35; letter-spacing: -0.005em; }
+    .note-excerpt {
+      margin: 0 0 11px; font-size: 13px; line-height: 1.5; color: var(--muted);
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .note-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .note-time { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+    /* empty states */
+    .empty-card {
+      background: var(--surface); border: 1px dashed color-mix(in oklch, var(--fg) 22%, var(--border));
+      border-radius: var(--radius-card); padding: 30px 22px; text-align: center;
+    }
+    .empty-card .ec-ic { width: 38px; height: 38px; margin: 0 auto 12px; stroke: var(--muted); fill: none; stroke-width: 1.5; }
+    .empty-card h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+    .empty-card p { margin: 0 auto 16px; max-width: 26ch; font-size: 13px; color: var(--muted); line-height: 1.55; }
+    .empty-card .chips { justify-content: center; margin-bottom: 16px; }
+
+    /* grouped list */
+    .grouped { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
+    .grouped > * + * { border-top: 1px solid var(--border); }
+    .group-head {
+      margin: 20px 4px 7px; font-size: 13px; font-weight: 600; letter-spacing: 0.02em;
+      color: var(--muted); text-transform: none;
+    }
+    .fav-group:first-child .group-head { margin-top: 0; }
+    .grouped .list-row {
+      display: grid; grid-template-columns: 1fr 48px; align-items: center; gap: 10px;
+      padding: 12px 14px;
+    }
+    .list-row .body { min-width: 0; }
+    .list-row .body[role="button"] { cursor: pointer; }
+    .list-row .body .title { font-size: 15px; font-weight: 500; line-height: 1.35; }
+    .list-row .body .sub {
+      color: var(--muted); font-size: 13px; line-height: 1.45; margin-top: 3px;
+      display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .star-btn { width: 48px; height: 48px; display: grid; place-items: center; color: var(--muted); }
+    .star-btn svg { width: 21px; height: 21px; stroke: currentColor; stroke-width: 1.8; fill: none; }
+    .star-btn.on { color: var(--fg); }
+    .star-btn.on svg { fill: currentColor; }
+    .star-btn:hover { color: var(--fg); }
+
+    /* profile */
+    .profile-head { display: flex; align-items: center; gap: 14px; }
+    .avatar-lg {
+      flex: 0 0 auto; width: 64px; height: 64px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent-soft), var(--fg-soft)), var(--surface);
+      border: 1px solid var(--border); display: grid; place-items: center; color: var(--muted);
+    }
+    .avatar-lg svg { width: 30px; height: 30px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+    .ph-name { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; }
+    .ph-text .meta { margin-top: 5px; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); padding: 18px 8px; }
+    .stat { text-align: center; }
+    .stat .num { font-size: 23px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
+    .stat .meta { margin-top: 5px; }
+
+    .group-label { margin: 0 4px 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+    .setting-row {
+      display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+      padding: 12px 14px; min-height: 52px; transition: background .15s;
+    }
+    .setting-row:hover { background: var(--fg-soft); }
+    .set-icon {
+      flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px;
+      background: color-mix(in oklch, var(--fg) 7%, transparent);
+      display: grid; place-items: center; color: var(--fg);
+    }
+    .set-icon svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+    .set-label { font-size: 15px; flex: 1 1 auto; }
+    .set-sub { font-size: 13px; color: var(--muted); white-space: nowrap; }
+    .chevron { width: 14px; height: 14px; stroke: color-mix(in oklch, var(--muted) 70%, var(--border)); fill: none; stroke-width: 2; flex: 0 0 auto; }
+    .setting-row .spinner {
+      width: 15px; height: 15px; border-radius: 50%; flex: 0 0 auto;
+      border: 2px solid color-mix(in oklch, var(--fg) 20%, transparent);
+      border-top-color: var(--fg); animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── detail view ──────────────────────────────────────────────── */
+    .detail {
+      position: absolute; inset: 0; z-index: 20; background: var(--bg);
+      display: flex; flex-direction: column;
+      transform: translateX(100%); visibility: hidden;
+      transition: transform .28s cubic-bezier(.32,.72,0,1), visibility 0s linear .28s;
+    }
+    .screen.detail-open .detail { transform: translateX(0); visibility: visible; transition: transform .28s cubic-bezier(.32,.72,0,1); }
+    .detail-nav {
+      flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+      padding: 2px 6px; background: color-mix(in oklch, var(--bg) 88%, transparent);
+      backdrop-filter: blur(20px); border-bottom: 1px solid var(--border);
+    }
+    .nav-btn {
+      width: 44px; height: 44px; display: grid; place-items: center;
+      color: var(--accent); border-radius: 999px; transition: background .15s;
+    }
+    .nav-btn:hover { background: var(--fg-soft); }
+    .nav-btn svg { width: 21px; height: 21px; stroke: currentColor; fill: none; stroke-width: 2; }
+    .nav-btn.neutral { color: var(--fg); }
+    .nav-btn.neutral svg { stroke-width: 1.8; }
+    .nav-btn.on svg { fill: currentColor; }
+    .detail-nav-title { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+    .detail-nav-right { display: flex; align-items: center; }
+    .detail-scroll { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 32px; }
+    .detail-scroll::-webkit-scrollbar { display: none; }
+    .detail-title {
+      font-family: var(--font-display); font-size: 25px; font-weight: 800;
+      letter-spacing: -0.02em; line-height: 1.28; margin: 2px 0 0;
+    }
+    .tags-row { display: flex; flex-wrap: wrap; gap: 7px; }
+    .source-card {
+      display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+      padding: 12px 14px; margin: 2px 0 4px; transition: background .15s;
+    }
+    .source-card:hover { background: var(--fg-soft); }
+    .src-tile {
+      flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px;
+      background: var(--accent-soft); color: var(--accent-text);
+      display: grid; place-items: center;
+    }
+    .src-tile svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+    .src-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .src-label { font-size: 11px; color: var(--muted); }
+    .src-desc {
+      font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; color: var(--fg);
+    }
+    .detail-body { margin-top: 8px; }
+    .detail-body p { margin: 0 0 14px; font-size: 15px; line-height: 1.72; color: var(--fg); }
+
+    /* ─── tab bar ──────────────────────────────────────────────────── */
+    .tabbar {
+      flex: 0 0 auto; display: grid; grid-template-columns: repeat(var(--tabs, 3), 1fr);
+      padding: 6px 8px 2px; border-top: 1px solid var(--border);
+      background: color-mix(in oklch, var(--surface) 92%, transparent);
+      backdrop-filter: blur(20px); position: relative; z-index: 15;
+      transition: transform .24s cubic-bezier(.32,.72,0,1), opacity .24s;
+    }
+    .screen.detail-open .tabbar { transform: translateY(110%); opacity: 0; visibility: hidden; pointer-events: none; transition: transform .24s cubic-bezier(.32,.72,0,1), opacity .24s, visibility 0s linear .24s; }
+    .tab {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 7px 0 9px; min-height: 52px; color: var(--muted);
+      font-size: 10px; letter-spacing: 0.02em; border-radius: 12px;
+      transition: color .15s;
+    }
+    .tab:hover { color: color-mix(in oklch, var(--fg) 55%, var(--muted)); }
+    .tab.active { color: var(--accent); }
+    .tab svg { width: 23px; height: 23px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+    .tab.active svg { stroke-width: 2; }
+
+    .home-indicator { flex: 0 0 28px; position: relative; z-index: 15; }
+    .home-indicator::after {
+      content: ''; position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+      width: 134px; height: 5px; background: var(--fg); border-radius: 999px; opacity: 0.85;
+    }
+
+    /* ─── sheets ───────────────────────────────────────────────────── */
+    .sheet-layer { position: absolute; inset: 0; z-index: 30; visibility: hidden; }
+    .sheet-layer.open { visibility: visible; }
+    .scrim {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      background: var(--scrim); opacity: 0; transition: opacity .24s ease-out;
+    }
+    .sheet-layer.open .scrim { opacity: 1; }
+    .sheet {
+      position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+      background: var(--surface); border-radius: 22px 22px 0 0;
+      padding: 10px 20px 22px;
+      box-shadow: 0 -10px 34px rgba(0,0,0,0.14);
+      transform: translateY(105%);
+      transition: transform .28s cubic-bezier(.32,.72,0,1);
+      display: flex; flex-direction: column; gap: 4px;
+      max-height: 86%;
+    }
+    .sheet.open { transform: translateY(0); }
+    .grabber {
+      align-self: center; width: 36px; height: 5px; border-radius: 999px;
+      background: color-mix(in oklch, var(--fg) 18%, transparent); margin-bottom: 10px;
+    }
+    .sheet-title { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.015em; line-height: 1.25; }
+    .sheet-sub { margin: 2px 0 8px; }
+    .sheet-content { overflow-y: auto; padding: 6px 0 8px; }
+    .sheet-actions { display: grid; grid-template-columns: 1fr 1.5fr; gap: 10px; margin-top: 10px; }
+
+    /* form fields */
+    .field { margin-bottom: 14px; }
+    .field-label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 6px 2px; }
+    .field-input {
+      width: 100%; min-height: 46px; padding: 11px 13px;
+      background: var(--field); border: 1px solid transparent; border-radius: 12px;
+      font: inherit; font-size: 15px; color: var(--fg); outline: none;
+      transition: border-color .15s, background .15s;
+    }
+    .field-input:focus { border-color: var(--accent); background: var(--surface); }
+    .field-input::placeholder { color: var(--placeholder); }
+    .field-input.invalid { border-color: oklch(52% 0.18 27); background: color-mix(in oklch, oklch(52% 0.18 27) 6%, var(--surface)); }
+    .field-input.area { resize: none; min-height: 104px; line-height: 1.5; }
+    .field-err { margin: 6px 0 0 2px; font-size: 12px; color: oklch(47% 0.16 27); }
+    .field-err[role="alert"] { font-weight: 500; }
+
+    /* AI sheet */
+    .ai-box {
+      display: flex; flex-direction: column; gap: 10px;
+      min-height: 216px; max-height: 300px; overflow-y: auto; padding: 10px 2px 8px;
+      border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    }
+    .ai-box::-webkit-scrollbar { display: none; }
+    .ai-msg { max-width: 86%; padding: 11px 14px; border-radius: 18px; font-size: 14px; line-height: 1.6; }
+    .ai-msg.hint {
+      align-self: center; max-width: 100%; background: transparent;
+      border: 1px dashed var(--border); color: var(--muted);
+      border-radius: 14px; text-align: center; font-size: 13px; padding: 14px 16px;
+    }
+    .ai-msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 6px; }
+    .ai-msg.answer { align-self: flex-start; background: var(--fg-soft); border-bottom-left-radius: 6px; color: var(--fg); }
+    .ai-msg.answer p { margin: 0 0 10px; }
+    .ai-msg.answer .ai-sources { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .ai-retry {
+      font-size: 12px; color: var(--accent-text); font-weight: 500;
+      padding: 2px 0; text-decoration: none;
+    }
+    .ai-retry:hover { text-decoration: underline; }
+    .ai-msg.typing { display: flex; align-items: center; gap: 5px; }
+    .ai-msg.typing .t-dot {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
+      animation: tp 1.1s ease-in-out infinite;
+    }
+    .ai-msg.typing .t-dot:nth-child(2) { animation-delay: .16s; }
+    .ai-msg.typing .t-dot:nth-child(3) { animation-delay: .32s; }
+    .ai-msg.typing .typing-label { margin: 0 0 0 6px; font-size: 12px; color: var(--muted); }
+    @keyframes tp { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+    .ai-input-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+    .ai-input-row .field-input { flex: 1; }
+    .send-btn {
+      flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%;
+      background: var(--accent); color: #fff; display: grid; place-items: center;
+      transition: background .15s, opacity .15s;
+    }
+    .send-btn:hover { background: color-mix(in oklch, var(--accent) 86%, black); }
+    .send-btn:disabled { opacity: .4; cursor: default; }
+    .send-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2.2; }
+
+    /* share sheet */
+    .copy-row {
+      display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+      padding: 12px 2px; margin-top: 6px; border-radius: 12px; transition: background .15s;
+    }
+    .copy-row:hover { background: var(--fg-soft); }
+    .copy-row .meta { margin-left: auto; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .copy-row > svg { width: 18px; height: 18px; stroke: var(--accent-text); fill: none; stroke-width: 1.8; flex: 0 0 auto; }
+    .share-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+    .share-app {
+      display: flex; flex-direction: column; align-items: center; gap: 7px;
+      padding: 6px 0 2px; border-radius: 12px; font-size: 11px; color: var(--muted);
+    }
+    .share-app:hover { background: var(--fg-soft); color: var(--fg); }
+    .app-tile {
+      width: 52px; height: 52px; border-radius: 16px; background: var(--fg-soft);
+      display: grid; place-items: center; color: var(--fg);
+    }
+    .app-tile svg { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+
+    /* appearance options */
+    .option-list { margin-top: 6px; }
+    .option-row {
+      display: flex; align-items: center; justify-content: space-between; width: 100%;
+      padding: 15px 4px; border-radius: 12px; font-size: 15px;
+    }
+    .option-row + .option-row { border-top: 1px solid var(--border); }
+    .option-row:hover { background: var(--fg-soft); }
+    .option-row .check { width: 19px; height: 19px; stroke: var(--accent); fill: none; stroke-width: 2.2; opacity: 0; transition: opacity .15s; }
+    .option-row.checked .check { opacity: 1; }
+
+    /* about sheet */
+    .about-mark {
+      align-self: center; width: 62px; height: 62px; border-radius: 17px; margin: 10px 0 6px;
+      background: var(--accent); color: #fff; display: grid; place-items: center;
+      font-family: var(--font-display); font-size: 30px; font-weight: 800;
+    }
+    .about-line { margin: 2px 0 0; text-align: center; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+    .about-text { margin: 6px 0 0; text-align: center; line-height: 1.6; }
+    .sheet-actions { margin-top: 18px; }
+
+    /* toast */
+    .toast {
+      position: absolute; top: 55px; left: 50%; z-index: 40;
+      transform: translateX(-50%) translateY(-10px);
+      display: inline-flex; align-items: center; gap: 7px;
+      max-width: 86%; padding: 10px 16px; border-radius: 999px;
+      background: var(--fg); color: var(--bg);
+      font-size: 13px; font-weight: 500; box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+      opacity: 0; pointer-events: none; transition: opacity .15s ease-out, transform .15s ease-out;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+    .toast svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.4; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .view, .detail, .tabbar, .sheet, .scrim, .toast, .icon-btn, .btn-primary,
+      .btn-secondary, .note-card, .setting-row, .star-btn, .chip-link, .copy-row,
+      .share-app, .option-row, .nav-btn, .source-card, .clear-btn {
+        transition: none !important;
+        animation: none !important;
+      }
+    }
+
+    /* Android Capacitor shell: use the WebView viewport, not the showcase device frame. */
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    body {
+      display: block;
+      padding: 0;
+      background: var(--bg);
+      overscroll-behavior: none;
+    }
+    .stage { display: block; width: 100%; height: 100%; }
+    .caption, .btn-rail, .island, .device::before, .device::after, .statusbar, .home-indicator {
+      display: none !important;
+    }
+    .device {
+      width: 100%; height: 100%; padding: 0; border-radius: 0;
+      background: transparent; box-shadow: none; isolation: auto;
+    }
+    .screen {
+      width: 100%; height: 100%; border-radius: 0;
+      padding-top: max(env(safe-area-inset-top), 12px);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .view { padding-bottom: max(28px, env(safe-area-inset-bottom)); }
+    .tabbar { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+    .toast { top: max(14px, env(safe-area-inset-top)); }
+    @media (min-width: 720px) {
+      .screen { max-width: 600px; margin-inline: auto; box-shadow: 0 0 0 1px var(--border); }
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="caption"><strong>UA</strong> · 个人知识库 · 首页 / 收藏 / 我的</div>
+
+    <div class="device" data-od-id="device">
+      <span class="btn-rail left-1" aria-hidden></span>
+      <span class="btn-rail left-2" aria-hidden></span>
+      <span class="btn-rail left-3" aria-hidden></span>
+      <span class="btn-rail right-1" aria-hidden></span>
+      <span class="island" aria-hidden></span>
+
+      <div class="screen" id="screen" data-theme="light" data-od-id="screen">
+        <!-- ─── 状态栏 ─── -->
+        <div class="statusbar">
+          <span class="num">9:41</span>
+          <span class="right">
+            <svg viewBox="0 0 17 11" aria-hidden>
+              <rect x="0" y="7" width="3" height="4" rx="0.6"/>
+              <rect x="4" y="5" width="3" height="6" rx="0.6"/>
+              <rect x="8" y="3" width="3" height="8" rx="0.6"/>
+              <rect x="12" y="0" width="3" height="11" rx="0.6"/>
+            </svg>
+            <svg viewBox="0 0 17 11" aria-hidden>
+              <path d="M8.5 1.5C5.5 1.5 2.7 2.6 0.5 4.6L2 6.1C3.8 4.5 6.1 3.6 8.5 3.6c2.4 0 4.7 0.9 6.5 2.5l1.5-1.5c-2.2-2-5-3.1-8-3.1zM3.5 7.6L5 9.1c1-0.9 2.2-1.4 3.5-1.4 1.3 0 2.5 0.5 3.5 1.4l1.5-1.5c-1.4-1.3-3.1-2-5-2-1.9 0-3.6 0.7-5 2zM6.5 10.6l2 2 2-2c-0.5-0.5-1.2-0.8-2-0.8s-1.5 0.3-2 0.8z"/>
+            </svg>
+            <svg class="battery" viewBox="0 0 25 11" aria-hidden>
+              <rect x="0.5" y="0.5" width="21" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-opacity="0.45"/>
+              <rect x="22" y="3.5" width="1.5" height="4" rx="0.4" fill="currentColor" fill-opacity="0.45"/>
+              <rect x="2" y="2" width="18" height="7" rx="1.4"/>
+            </svg>
+          </span>
+        </div>
+
+        <div class="views">
+          <!-- ═══ 首页 ═══ -->
+          <main class="content view active" id="view-home" data-od-id="view-home" aria-hidden="false">
+            <div class="header" data-od-id="header-home">
+              <div>
+                <p class="greeting">3 月 24 日 · 周一</p>
+                <h1>知识库</h1>
+              </div>
+              <button class="icon-btn" id="btn-to-profile" data-od-id="btn-to-profile" aria-label="我的">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="9.5" r="3"/><path d="M6.5 18.5c1-2.1 3.1-3.3 5.5-3.3s4.5 1.2 5.5 3.3"/></svg>
+              </button>
+            </div>
+
+            <section class="pad" style="margin-bottom: 14px;" data-od-id="search-field">
+              <div class="search-bar">
+                <svg class="search-ic" viewBox="0 0 24 24" aria-hidden><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                <input id="search-input" type="search" placeholder="搜索全部笔记" aria-label="搜索全部笔记" autocomplete="off" />
+                <button id="search-clear" class="clear-btn hidden" aria-label="清除搜索">
+                  <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+                </button>
+              </div>
+            </section>
+
+            <section class="pad" style="margin-bottom: 20px;" data-od-id="quick-actions">
+              <div class="grid-2">
+                <button class="btn-primary quick" id="btn-new-note" data-od-id="btn-new-note">
+                  <svg viewBox="0 0 24 24"><path d="M12 5.5v13M5.5 12h13"/></svg>新建笔记
+                </button>
+                <button class="btn-secondary quick" id="btn-ai" data-od-id="btn-ai">
+                  <svg viewBox="0 0 24 24"><path d="M12 4l1.9 5.1L19 11l-5.1 1.9L12 18l-1.9-5.1L5 11l5.1-1.9L12 4z"/><path d="M18.6 15.8l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2z"/></svg>AI 问答
+                </button>
+              </div>
+            </section>
+
+            <section class="pad" data-od-id="recent">
+              <div class="section-head row-between">
+                <h2>最近笔记</h2>
+                <span class="meta" id="recent-count"></span>
+              </div>
+              <div class="section-head row-between hidden" id="search-head">
+                <h2>搜索结果</h2>
+                <span class="meta sh-count" id="sh-count"></span>
+              </div>
+              <div class="note-list" id="recent-list" data-od-id="recent-list"></div>
+              <div class="empty-card hidden" id="search-empty" data-od-id="search-empty">
+                <svg class="ec-ic" viewBox="0 0 24 24" aria-hidden><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                <h3>没有找到相关笔记</h3>
+                <p>没有与「<span id="search-empty-q"></span>」匹配的笔记，换个关键词试试。</p>
+                <div class="chips">
+                  <button class="chip chip-link" data-set-query="大模型">大模型</button>
+                  <button class="chip chip-link" data-set-query="工作流">工作流</button>
+                  <button class="chip chip-link" data-set-query="抓取">抓取</button>
+                </div>
+                <button class="btn-secondary" id="search-clear2">清空搜索</button>
+              </div>
+            </section>
+          </main>
+
+          <!-- ═══ 收藏 ═══ -->
+          <main class="content view" id="view-favs" data-od-id="view-favs" aria-hidden="true">
+            <div class="header" data-od-id="header-favs">
+              <div>
+                <p class="greeting">收藏沉淀</p>
+                <h1>收藏</h1>
+              </div>
+            </div>
+            <section class="pad" style="margin-bottom: 4px;" data-od-id="fav-overview">
+              <div class="row-between">
+                <span class="meta">按主题分组</span>
+                <span class="meta num" id="fav-count"></span>
+              </div>
+            </section>
+            <section class="pad" id="fav-groups" data-od-id="fav-groups"></section>
+            <section class="pad" style="margin-top: 30px;" id="fav-empty-wrap" data-od-id="fav-empty">
+              <div class="empty-card hidden" id="fav-empty">
+                <svg class="ec-ic" viewBox="0 0 24 24" aria-hidden><path d="M12 3.6l2.56 5.2 5.73.83-4.14 4.04.98 5.7L12 16.72l-5.13 2.7.98-5.7L3.7 9.63l5.73-.83L12 3.6z"/></svg>
+                <h3>还没有收藏</h3>
+                <p>在笔记详情页点星标，把重要的内容收进来。</p>
+                <button class="btn-secondary" id="btn-go-home">去首页逛逛</button>
+              </div>
+            </section>
+          </main>
+
+          <!-- ═══ 我的 ═══ -->
+          <main class="content view" id="view-me" data-od-id="view-me" aria-hidden="true">
+            <div class="header" data-od-id="header-me">
+              <div>
+                <p class="greeting">我的知识库</p>
+                <h1>我的</h1>
+              </div>
+            </div>
+            <section class="pad" style="margin-bottom: 14px;" data-od-id="profile-head">
+              <div class="card profile-head">
+                <div class="avatar-lg">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.2-3.2 4.1-5 7.5-5s6.3 1.8 7.5 5"/></svg>
+                </div>
+                <div class="ph-text">
+                  <div class="ph-name">UA 用户</div>
+                  <div class="meta">个人知识库 · 使用第 128 天</div>
+                </div>
+              </div>
+            </section>
+            <section class="pad" style="margin-bottom: 22px;" data-od-id="profile-stats">
+              <div class="card stats">
+                <div class="stat"><div class="num" id="stat-notes">127</div><div class="meta">笔记数</div></div>
+                <div class="stat"><div class="num" id="stat-sources">36</div><div class="meta">来源数</div></div>
+                <div class="stat"><div class="num" id="stat-favs">6</div><div class="meta">收藏数</div></div>
+              </div>
+            </section>
+            <section class="pad" data-od-id="settings-list">
+              <p class="group-label">设置</p>
+              <div class="grouped">
+                <button class="setting-row" id="setting-sync" data-od-id="setting-sync">
+                  <span class="set-icon"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 3.5V8h-4.5"/><path d="M4 12a8 8 0 0 1 2.3 5.7"/><path d="M4 20.5V16h4.5"/></svg></span>
+                  <span class="set-label">同步</span>
+                  <span class="set-sub" id="set-sync-sub">已同步 · 刚刚</span>
+                  <svg class="chevron" viewBox="0 0 24 24" aria-hidden><path d="M9 5.5 15.5 12 9 18.5"/></svg>
+                </button>
+                <button class="setting-row" id="setting-appearance" data-od-id="setting-appearance">
+                  <span class="set-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/></svg></span>
+                  <span class="set-label">外观</span>
+                  <span class="set-sub" id="set-appearance-sub">浅色</span>
+                  <svg class="chevron" viewBox="0 0 24 24" aria-hidden><path d="M9 5.5 15.5 12 9 18.5"/></svg>
+                </button>
+                <button class="setting-row" id="setting-about" data-od-id="setting-about">
+                  <span class="set-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><circle cx="12" cy="7.6" r="0.7"/></svg></span>
+                  <span class="set-label">关于</span>
+                  <span class="set-sub">UA 1.0.0</span>
+                  <svg class="chevron" viewBox="0 0 24 24" aria-hidden><path d="M9 5.5 15.5 12 9 18.5"/></svg>
+                </button>
+              </div>
+            </section>
+          </main>
+
+          <!-- ═══ 笔记详情 ═══ -->
+          <article class="detail" id="view-detail" data-od-id="view-detail" aria-hidden="true">
+            <header class="detail-nav">
+              <button class="nav-btn" id="detail-back" aria-label="返回">
+                <svg viewBox="0 0 24 24"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+              </button>
+              <span class="detail-nav-title">笔记</span>
+              <div class="detail-nav-right">
+                <button class="nav-btn neutral" id="detail-star" aria-label="收藏" aria-pressed="false">
+                  <svg viewBox="0 0 24 24"><path d="M12 3.6l2.56 5.2 5.73.83-4.14 4.04.98 5.7L12 16.72l-5.13 2.7.98-5.7L3.7 9.63l5.73-.83L12 3.6z"/></svg>
+                </button>
+                <button class="nav-btn neutral" id="detail-share" aria-label="分享">
+                  <svg viewBox="0 0 24 24"><path d="M12 15V4.5"/><path d="M8.5 8 12 4.5 15.5 8"/><path d="M5 13.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4.5"/></svg>
+                </button>
+              </div>
+            </header>
+            <div class="detail-scroll" id="detail-scroll">
+              <div class="pad stack" style="padding-top: 16px; gap: 12px;">
+                <div class="chips" id="detail-chips"></div>
+                <h1 class="detail-title" id="detail-title"></h1>
+                <div class="tags-row" id="detail-tags"></div>
+                <button class="source-card" id="detail-source" data-od-id="detail-source">
+                  <span class="src-tile"><svg viewBox="0 0 24 24"><path d="M10 14a4.5 4.5 0 0 0 6.4.4l2.5-2.5a4.5 4.5 0 0 0-6.4-6.4l-1.5 1.5"/><path d="M14 10a4.5 4.5 0 0 0-6.4-.4l-2.5 2.5a4.5 4.5 0 0 0 6.4 6.4l1.5-1.5"/></svg></span>
+                  <span class="src-text">
+                    <span class="src-label">来源</span>
+                    <span class="src-desc" id="detail-source-desc"></span>
+                  </span>
+                  <svg class="chevron" viewBox="0 0 24 24" aria-hidden><path d="M9 5.5 15.5 12 9 18.5"/></svg>
+                </button>
+                <div class="detail-body" id="detail-body"></div>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <!-- ─── 底部 tab ─── -->
+        <nav class="tabbar" data-od-id="tabbar" style="--tabs: 3;" aria-label="主导航">
+          <button class="tab active" data-tab="home" data-od-id="tab-home" aria-current="page">
+            <svg viewBox="0 0 24 24"><path d="M3 12 12 3l9 9"/><path d="M5 10v10h14V10"/></svg>
+            首页
+          </button>
+          <button class="tab" data-tab="favs" data-od-id="tab-favs">
+            <svg viewBox="0 0 24 24"><path d="M12 3.6l2.56 5.2 5.73.83-4.14 4.04.98 5.7L12 16.72l-5.13 2.7.98-5.7L3.7 9.63l5.73-.83L12 3.6z"/></svg>
+            收藏
+          </button>
+          <button class="tab" data-tab="me" data-od-id="tab-me">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.2-3.2 4.1-5 7.5-5s6.3 1.8 7.5 5"/></svg>
+            我的
+          </button>
+        </nav>
+
+        <div class="home-indicator" aria-hidden></div>
+
+        <!-- ─── sheets ─── -->
+        <div class="sheet-layer" id="sheet-layer" aria-hidden="true">
+          <button class="scrim" id="scrim" tabindex="-1" aria-label="关闭面板"></button>
+
+          <section class="sheet" id="sheet-note" role="dialog" aria-modal="true" aria-labelledby="sheet-note-title" data-od-id="sheet-note">
+            <span class="grabber" aria-hidden="true"></span>
+            <h2 class="sheet-title" id="sheet-note-title">新建笔记</h2>
+            <p class="sheet-sub meta">保存后出现在「最近笔记」顶部</p>
+            <div class="sheet-content">
+              <div class="field">
+                <label class="field-label" for="note-title">标题</label>
+                <input class="field-input" id="note-title" placeholder="给这篇笔记起个名字" maxlength="80" autocomplete="off" />
+                <p class="field-err hidden" id="note-title-err" role="alert">标题不能为空</p>
+              </div>
+              <div class="field">
+                <label class="field-label" for="note-body">正文</label>
+                <textarea class="field-input area" id="note-body" rows="4" placeholder="随手记点什么…"></textarea>
+              </div>
+            </div>
+            <div class="sheet-actions">
+              <button class="btn-secondary" id="note-cancel">取消</button>
+              <button class="btn-primary" id="note-save">保存</button>
+            </div>
+          </section>
+
+          <section class="sheet" id="sheet-ai" role="dialog" aria-modal="true" aria-labelledby="sheet-ai-title" data-od-id="sheet-ai">
+            <span class="grabber" aria-hidden="true"></span>
+            <h2 class="sheet-title" id="sheet-ai-title">AI 问答</h2>
+            <p class="sheet-sub meta">基于你的知识库回答 · 每次最多参考 5 篇笔记</p>
+            <div class="ai-box" id="ai-msgs"></div>
+            <div class="ai-input-row">
+              <input class="field-input" id="ai-input" placeholder="输入一个问题…" aria-label="输入问题" autocomplete="off" />
+              <button class="send-btn" id="ai-send" aria-label="发送">
+                <svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></svg>
+              </button>
+            </div>
+          </section>
+
+          <section class="sheet" id="sheet-share" role="dialog" aria-modal="true" aria-labelledby="sheet-share-title" data-od-id="sheet-share">
+            <span class="grabber" aria-hidden="true"></span>
+            <h2 class="sheet-title" id="sheet-share-title">分享</h2>
+            <button class="copy-row" id="share-copy">
+              <svg viewBox="0 0 24 24"><path d="M10 14a4.5 4.5 0 0 0 6.4.4l2.5-2.5a4.5 4.5 0 0 0-6.4-6.4l-1.5 1.5"/><path d="M14 10a4.5 4.5 0 0 0-6.4-.4l-2.5 2.5a4.5 4.5 0 0 0 6.4 6.4l1.5-1.5"/></svg>
+              <span>拷贝链接</span>
+              <span class="meta num" id="share-url"></span>
+            </button>
+            <div class="share-grid">
+              <button class="share-app" data-app="信息">
+                <span class="app-tile"><svg viewBox="0 0 24 24"><path d="M21 12a8.5 8.5 0 0 1-8.5 8.5c-1.4 0-2.7-.3-3.9-.9L3 21l1.4-5.6A8.5 8.5 0 1 1 21 12z"/></svg></span>
+                信息
+              </button>
+              <button class="share-app" data-app="邮件">
+                <span class="app-tile"><svg viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4.5 7.5 7.5 6 7.5-6"/></svg></span>
+                邮件
+              </button>
+              <button class="share-app" data-app="备忘录">
+                <span class="app-tile"><svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4"/><path d="M9 12h6M9 15.5h6"/></svg></span>
+                备忘录
+              </button>
+              <button class="share-app" data-app="更多">
+                <span class="app-tile"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg></span>
+                更多
+              </button>
+            </div>
+          </section>
+
+          <section class="sheet" id="sheet-appearance" role="dialog" aria-modal="true" aria-labelledby="sheet-appearance-title" data-od-id="sheet-appearance">
+            <span class="grabber" aria-hidden="true"></span>
+            <h2 class="sheet-title" id="sheet-appearance-title">外观</h2>
+            <div class="option-list">
+              <button class="option-row checked" data-value="light"><span>浅色</span><svg class="check" viewBox="0 0 24 24"><path d="M5 12.5 10 17.5 19 7.5"/></svg></button>
+              <button class="option-row" data-value="dark"><span>深色</span><svg class="check" viewBox="0 0 24 24"><path d="M5 12.5 10 17.5 19 7.5"/></svg></button>
+              <button class="option-row" data-value="system"><span>跟随系统</span><svg class="check" viewBox="0 0 24 24"><path d="M5 12.5 10 17.5 19 7.5"/></svg></button>
+            </div>
+          </section>
+
+          <section class="sheet" id="sheet-about" role="dialog" aria-modal="true" aria-labelledby="sheet-about-title" data-od-id="sheet-about">
+            <span class="grabber" aria-hidden="true"></span>
+            <div class="about-mark">U</div>
+            <h2 class="sheet-title" id="sheet-about-title" style="text-align:center;">UA</h2>
+            <p class="sheet-sub meta" style="text-align:center;">版本 1.0.0</p>
+            <p class="about-line">随手记录 · 随时检索 · 收藏沉淀</p>
+            <p class="about-text meta">个人知识库的移动端入口。数据本地优先，支持多端同步。</p>
+            <div class="sheet-actions">
+              <button class="btn-primary" id="about-done">完成</button>
+            </div>
+          </section>
+        </div>
+
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    'use strict';
+    var $ = function (s, el) { return (el || document).querySelector(s); };
+    var $$ = function (s, el) { return Array.prototype.slice.call((el || document).querySelectorAll(s)); };
+    var screen = $('#screen');
+
+    /* ─── 数据 ─────────────────────────────────────────────── */
+    var NOTES = [
+      { id: 'transformer-notes', title: '大模型训练原理 · Transformer 笔记', group: 'concept', fav: true, src: 'wiki', srcLabel: 'wiki', srcDesc: '内部词条 · 大模型系列', updated: '10 分钟前', words: 296, tags: ['大模型', 'Transformer'],
+        excerpt: '从注意力机制到多头自注意力，梳理 Transformer 的编码器—解码器结构，以及缩放点积注意力为何需要除以 √d_k。',
+        body: ['Transformer 把序列建模从「逐步递归」改为「并行注意力」：每个位置的表示直接与序列中所有其他位置交互。缩放点积注意力在 Q·Kᵀ 之后除以 √d_k，避免点积随维度增长而进入 softmax 饱和区，梯度才能稳定回传。',
+          '多头机制让模型同时关注不同子空间——一个头关注局部句法，另一个头关注远距离指代；位置编码用不同频率的正弦波给每个 token 打上顺序坐标，弥补注意力本身的无序性。',
+          '训练侧的经验：学习率预热（warmup）+ 余弦退火、标签平滑、以及按层数缩放学习率，是复现高质量模型的三件套。'] },
+      { id: 'kb-runbook', title: '个人知识库运行手册', group: 'project', fav: true, src: 'wiki', srcLabel: 'wiki', srcDesc: '内部词条 · 方法手册', updated: '昨天', words: 243, tags: ['方法', '工作流'],
+        excerpt: '定义「输入—加工—输出」三层流水线：随手捕获到收件箱，定期整理成原子笔记，按 PARA 归档。',
+        body: ['运行手册定义三层流水线：捕获（收件箱）—加工（原子笔记）—归档（PARA 四个区）。一切入口都先进收件箱，不就地整理；每周日做一次剪枝，把超过两周未动的草稿合并或归档。',
+          '原子笔记只讲一件事，标题用「动词 + 对象」；每条笔记开头写一句「这篇笔记回答什么问题」，未来检索时这句话就是最好的入口。',
+          '指标只盯一个：本周「被再次使用」的笔记数。被引用的笔记才是资产，其余只是库存。'] },
+      { id: 'crawl4ai', title: 'Crawl4AI 网页抓取工具', group: 'source', fav: true, src: 'num', srcLabel: '#0032', srcDesc: 'docs.crawl4ai.com', updated: '昨天', words: 268, tags: ['抓取', '自动化'],
+        excerpt: '一个面向 LLM 的异步网页爬虫：CSS/LLM 双模式提取、JS 渲染等待、Markdown 直出。',
+        body: ['Crawl4AI 是面向 LLM 的异步网页爬虫：默认输出 Markdown 而不是原始 HTML，支持 CSS 选择器与 LLM 两种提取模式，能等待页面 JS 渲染完成后再抓取。',
+          '关键参数：wait_for（选择器条件等待）、chunk_size（超长页分块）、extraction_strategy（固定字段抽取）。用它把公众号文章、文档站批量转成 Markdown，喂给知识库的 raw 区。',
+          '使用注意：遵守目标站点 robots.txt 与频率限制；抓取结果一律记录来源 URL 与抓取时间，方便溯源。'] },
+      { id: 'feynman-kb', title: '费曼学习法在知识库中的应用', group: 'concept', fav: true, src: 'wiki', srcLabel: 'wiki', srcDesc: '内部词条 · 学习方法', updated: '2 天前', words: 152, tags: ['学习方法'],
+        excerpt: '把「能讲清楚」当作笔记完成的唯一标准——每篇笔记留一个「向初学者解释」小节。',
+        body: ['「能讲清楚，才算懂。」把每条笔记的最后一节固定为「向初学者解释」：假设读者只有高中基础，用比喻和例子把概念重新说一遍。',
+          '写不下去的地方就是知识的裂缝——回原文、补例子，或者拆成两条更小的笔记。这个出口让整理从搬运变成真正的理解。'] },
+      { id: 'backlinks', title: '双向链接与知识图谱实践', group: 'concept', fav: false, src: 'wiki', srcLabel: 'wiki', srcDesc: '内部词条 · 笔记法', updated: '3 天前', words: 161, tags: ['笔记法', 'Obsidian'],
+        excerpt: '链接是第二层内容：用「为什么关联」注释替代裸链接，图谱才不会退化成蛛网。',
+        body: ['双向链接的价值不在图谱的连线，而在「为什么关联」。给每条链接加一行注释（例如「反例：这里和费曼法相反」），图谱才不会退化成无法阅读的蛛网。',
+          '实践：每周检视一次孤岛笔记（没有任何出链/入链的笔记），要么给它找到上下文，要么归档。孤岛是未消化的输入，不是资产。'] },
+      { id: 'weekly-review', title: '每日回顾与周检视工作流', group: 'project', fav: true, src: 'wiki', srcLabel: 'wiki', srcDesc: '内部词条 · 工作流', updated: '4 天前', words: 178, tags: ['复盘', 'PARA'],
+        excerpt: '每天 5 分钟重读「收件箱」与「闪念」，每周日做一次剪枝与归档，保持库的活性。',
+        body: ['每日 5 分钟：重读收件箱与闪念笔记，能 30 秒内消化的就地处理，否则标「待整理」进入周末队列。',
+          '每周日 30 分钟：① 归档两周未动的草稿；② 合并重复笔记；③ 为本周被引用的笔记补一段「总结」；④ 定下周一个主题入口。目标不是清空，而是让库保持「活」。'] },
+      { id: 'zotero-obsidian', title: 'Zotero 与 Obsidian 联动方案', group: 'source', fav: false, src: 'raw', srcLabel: 'raw', srcDesc: 'zotero.org/support/zh', updated: '5 天前', words: 165, tags: ['文献', '插件'],
+        excerpt: '通过 Better BibTeX + 引用插件，让文献标注直接进入笔记，保持双链与引文同步。',
+        body: ['联动链路：Better BibTeX 导出 citation key → Obsidian 端用 Citations 插件插入引用 → 阅读时在 Zotero 内高亮并导出注释，注释自动进入对应笔记的「文献摘录」区。',
+          '坑位提醒：两个库的同步用 Zotero 官方同步 + 笔记库走 Git，避免双写；citation key 一旦发布就不要再改，否则全文链接断裂。'] },
+      { id: 'prompt-cheatsheet', title: '提示词工程速查表 v2', group: 'concept', fav: false, src: 'wiki', srcLabel: 'wiki', srcDesc: '内部词条 · AI 工具', updated: '1 周前', words: 174, tags: ['AI', '提示词'],
+        excerpt: '角色—任务—约束—示例四段式模板，附 12 个高频改写技巧与反例。',
+        body: ['四段式模板：角色 + 任务 + 约束 + 示例。示例比形容词有效——「像这样改写」胜过「写得专业一点」。',
+          '12 个技巧的前 3 个：① 把大任务拆成两步（先列提纲再成文）；② 给模型一个「不知道就说不知道」的出口；③ 复杂格式先给骨架。反例：连续用三个否定句描述想要的东西。'] },
+      { id: 'oss-weekly-17', title: '开源周刊 #17', group: 'source', fav: true, src: 'num', srcLabel: '#0091', srcDesc: 'github.com/ruanyf/weekly', updated: '1 周前', words: 142, tags: ['开源', '周刊'],
+        excerpt: '本周关注：本地优先数据库、自托管搜索与 AI 阅读器的三个新项目。',
+        body: ['本期三个项目：① 本地优先的嵌入式数据库（SQLite 的替代讨论）；② 自托管全文搜索（中文分词是亮点）；③ 一个把 PDF 转成结构化笔记的 AI 阅读器。',
+          '都还年轻，但方向一致：个人数据回归本地。值得每周跟踪，纳入「来源」区的候选。'] },
+      { id: 'why-students', title: '阅读摘录 ·《为什么学生不喜欢上学》', group: 'source', fav: false, src: 'raw', srcLabel: 'raw', srcDesc: 'book.douban.com/subject/26301412', updated: '2 周前', words: 158, tags: ['认知科学', '摘录'],
+        excerpt: '「思考是缓慢而费力的，大脑天生回避思考」——环境设计比意志力更可靠。',
+        body: ['核心论点：思考是缓慢且费力的，大脑会本能回避思考。学习的关键不是「更努力地思考」，而是把环境设计得让正确行为最省力。',
+          '对知识库的启示：捕获入口要离使用场景足够近；检索不能依赖记忆，而要依赖结构。把「费力的事」前置成习惯，而不是靠意志力。'] },
+      { id: 'kb-cold-start', title: '知识库冷启动计划（30 天）', group: 'project', fav: false, src: 'wiki', srcLabel: 'wiki', srcDesc: '内部词条 · 计划', updated: '2 周前', words: 166, tags: ['计划', '习惯'],
+        excerpt: '前两周只做捕获不做整理，第三周建立 5 个主题入口，第四周跑通一次完整回顾。',
+        body: ['30 天冷启动：第 1–2 周只做捕获，任何想法先扔进收件箱，禁止整理；第 3 周建立 5 个主题入口（工作 / 学习 / 阅读 / 工具 / 生活）；第 4 周跑通一次完整回顾。',
+          '里程碑：第 7 天收件箱 ≥ 30 条；第 14 天完成第一次剪枝；第 21 天出现第一条被引用的笔记；第 30 天回顾一次并决定是否继续。'] },
+      { id: 'rag-notes', title: 'RAG 检索增强生成入门笔记', group: 'concept', fav: false, src: 'wiki', srcLabel: 'wiki', srcDesc: '内部词条 · 大模型系列', updated: '3 周前', words: 182, tags: ['RAG', '大模型'],
+        excerpt: '索引—检索—重排—生成四步链路，以及为什么「检索质量决定生成质量」。',
+        body: ['RAG 四步链路：索引（切块 + 向量化）、检索（Top-K 召回）、重排（精排相关度）、生成（把上下文拼进提示词）。检索质量决定生成质量——垃圾进，垃圾出。',
+          '个人知识库的实践：先用全文搜索 + 标签满足 80% 需求；笔记量过千后再上语义检索。切块粒度、元数据过滤、混合检索（关键词 + 向量）是三个最有效的杠杆。'] }
+    ];
+    var NOTES_BASE = 127;              /* 全库笔记数（列表展示最近 12 篇） */
+    var SOURCES = 36;
+    var GROUP_ORDER = ['concept', 'project', 'source'];
+    var GROUP_LABEL = { concept: '概念', project: '项目', source: '来源' };
+    var THEME_LABEL = { light: '浅色', dark: '深色', system: '跟随系统' };
+
+    var state = {
+      tab: 'home',
+      query: '',
+      theme: (function () { try { return localStorage.getItem('ua-theme') || 'light'; } catch (e) { return 'light'; } })(),
+      syncing: false
+    };
+    var currentNote = null;
+    var lastFocus = null;
+
+    var esc = function (s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    };
+    var STAR = 'M12 3.6l2.56 5.2 5.73.83-4.14 4.04.98 5.7L12 16.72l-5.13 2.7.98-5.7L3.7 9.63l5.73-.83L12 3.6z';
+
+    /* ─── toast ───────────────────────────────────────────── */
+    var toastTimer = null, toastPaused = false;
+    function toast(msg, ms) {
+      var t = $('#toast');
+      t.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 12.5 10 17.5 19 7.5"/></svg>' + esc(msg);
+      t.classList.add('show');
+      clearTimeout(toastTimer);
+      var hide = function () { t.classList.remove('show'); };
+      var start = function () { if (!toastPaused) toastTimer = setTimeout(hide, ms || 2400); };
+      t.onmouseenter = function () { toastPaused = true; clearTimeout(toastTimer); };
+      t.onmouseleave = function () { toastPaused = false; start(); };
+      t.onfocusin = function () { toastPaused = true; clearTimeout(toastTimer); };
+      t.onfocusout = function () { toastPaused = false; start(); };
+      start();
+    }
+
+    /* ─── 渲染：首页 ───────────────────────────────────────── */
+    function visibleNotes() {
+      var q = state.query.trim().toLowerCase();
+      if (!q) return NOTES;
+      return NOTES.filter(function (n) {
+        return (n.title + n.excerpt + n.tags.join(' ') + n.srcLabel).toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    function srcChip(n) {
+      return '<span class="chip chip-mono">' + esc(n.srcLabel) + '</span>';
+    }
+    function noteCard(n) {
+      return '<article class="note-card" data-open="' + n.id + '" role="button" tabindex="0" data-od-id="note-card-' + n.id + '" aria-label="打开笔记：' + esc(n.title) + '">' +
+        '<h3 class="note-title">' + esc(n.title) + '</h3>' +
+        '<p class="note-excerpt">' + esc(n.excerpt) + '</p>' +
+        '<div class="note-foot"><div class="chips">' + srcChip(n) + '</div><span class="note-time">' + esc(n.updated) + '</span></div>' +
+        '</article>';
+    }
+    function renderHome() {
+      var list = visibleNotes();
+      var q = state.query.trim();
+      $('#recent-count').textContent = NOTES.length + ' 篇';
+      $('#search-head').classList.toggle('hidden', !q);
+      if (q) {
+        $('#sh-count').textContent = list.length + ' 篇';
+        if (list.length) {
+          $('#recent-list').innerHTML = list.map(noteCard).join('');
+          $('#search-empty').classList.add('hidden');
+        } else {
+          $('#recent-list').innerHTML = '';
+          $('#search-empty-q').textContent = q;
+          $('#search-empty').classList.remove('hidden');
+        }
+      } else {
+        $('#search-empty').classList.add('hidden');
+        $('#recent-list').innerHTML = NOTES.slice(0, 6).map(noteCard).join('');
+      }
+    }
+
+    /* ─── 渲染：收藏 ───────────────────────────────────────── */
+    function favRow(n) {
+      var on = n.fav ? ' on' : '';
+      return '<div class="list-row" data-od-id="fav-row-' + n.id + '">' +
+        '<div class="body" data-open="' + n.id + '" role="button" tabindex="0" aria-label="打开笔记：' + esc(n.title) + '">' +
+        '<div class="title">' + esc(n.title) + '</div><div class="sub">' + esc(n.excerpt) + '</div>' +
+        '</div>' +
+        '<button class="star-btn' + on + '" data-toggle-fav="' + n.id + '" aria-pressed="' + n.fav + '" aria-label="' + (n.fav ? '取消收藏' : '收藏') + '：' + esc(n.title) + '">' +
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + STAR + '"/></svg></button>' +
+        '</div>';
+    }
+    function renderFavs() {
+      var fav = NOTES.filter(function (n) { return n.fav; });
+      $('#fav-count').textContent = fav.length + ' 篇';
+      var emptyWrap = $('#fav-empty-wrap');
+      if (!fav.length) {
+        $('#fav-groups').classList.add('hidden');
+        emptyWrap.classList.remove('hidden');
+        $('#fav-empty').classList.remove('hidden');
+        return;
+      }
+      $('#fav-groups').classList.remove('hidden');
+      emptyWrap.classList.add('hidden');
+      $('#fav-groups').innerHTML = GROUP_ORDER.map(function (g) {
+        var items = fav.filter(function (n) { return n.group === g; });
+        if (!items.length) return '';
+        return '<section class="fav-group" data-od-id="group-' + g + '">' +
+          '<h2 class="group-head">' + GROUP_LABEL[g] + ' · ' + items.length + '</h2>' +
+          '<div class="grouped">' + items.map(favRow).join('') + '</div></section>';
+      }).join('');
+    }
+
+    /* ─── 渲染：我的 ───────────────────────────────────────── */
+    function renderStats() {
+      $('#stat-notes').textContent = NOTES_BASE + (NOTES.length - 12);
+      $('#stat-sources').textContent = SOURCES;
+      $('#stat-favs').textContent = NOTES.filter(function (n) { return n.fav; }).length;
+    }
+
+    /* ─── 详情 ────────────────────────────────────────────── */
+    function updateDetailStar() {
+      var b = $('#detail-star');
+      var on = !!(currentNote && currentNote.fav);
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on);
+      b.setAttribute('aria-label', on ? '取消收藏' : '收藏');
+    }
+    function openDetail(id) {
+      var n = NOTES.filter(function (x) { return x.id === id; })[0];
+      if (!n) return;
+      currentNote = n;
+      $('#detail-title').textContent = n.title;
+      $('#detail-chips').innerHTML = srcChip(n) +
+        '<span class="chip">更新于 ' + esc(n.updated) + '</span>' +
+        '<span class="chip chip-mono">' + n.words + ' 字</span>';
+      $('#detail-tags').innerHTML = n.tags.map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('');
+      $('#detail-source-desc').textContent = n.srcDesc;
+      $('#detail-body').innerHTML = n.body.map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('');
+      updateDetailStar();
+      screen.classList.add('detail-open');
+      $('#view-detail').setAttribute('aria-hidden', 'false');
+      $('#detail-scroll').scrollTop = 0;
+      $('#detail-back').focus();
+    }
+    function closeDetail() {
+      screen.classList.remove('detail-open');
+      $('#view-detail').setAttribute('aria-hidden', 'true');
+      currentNote = null;
+    }
+    function toggleFav(id) {
+      var n = NOTES.filter(function (x) { return x.id === id; })[0];
+      if (!n) return;
+      n.fav = !n.fav;
+      renderFavs(); renderStats();
+      if (currentNote && currentNote.id === id) {
+        updateDetailStar();
+        toast(n.fav ? '已收藏' : '已取消收藏');
+      }
+    }
+
+    /* ─── sheets ──────────────────────────────────────────── */
+    function showSheet(id) {
+      lastFocus = document.activeElement;
+      var layer = $('#sheet-layer');
+      $$('.sheet', layer).forEach(function (s) { s.classList.remove('open'); });
+      $('#' + id).classList.add('open');
+      layer.classList.add('open');
+      layer.setAttribute('aria-hidden', 'false');
+      var f = $('#' + id).querySelector('input, textarea, .option-row, .copy-row, .share-app');
+      if (f) f.focus();
+    }
+    function hideSheets() {
+      var layer = $('#sheet-layer');
+      layer.classList.remove('open');
+      layer.setAttribute('aria-hidden', 'true');
+      $$('.sheet', layer).forEach(function (s) { s.classList.remove('open'); });
+      if (lastFocus && lastFocus.focus) lastFocus.focus();
+    }
+    /* 焦点圈闭 */
+    $('#sheet-layer').addEventListener('keydown', function (e) {
+      if (e.key !== 'Tab') return;
+      var open = $('.sheet.open');
+      if (!open) return;
+      var f = $$('a[href], button:not(:disabled), input, textarea, select, [tabindex]:not([tabindex="-1"])', open);
+      if (!f.length) return;
+      var first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
+
+    /* ─── 新建笔记 ────────────────────────────────────────── */
+    function validateTitle(show) {
+      var inp = $('#note-title');
+      var bad = inp.value.trim() === '';
+      inp.classList.toggle('invalid', bad && show);
+      $('#note-title-err').classList.toggle('hidden', !(bad && show));
+      return !bad;
+    }
+    function saveNote() {
+      if (!validateTitle(true)) { $('#note-title').focus(); return; }
+      var btn = $('#note-save');
+      btn.disabled = true;
+      var title = $('#note-title').value.trim();
+      var body = $('#note-body').value.trim();
+      setTimeout(function () {
+        var note = {
+          id: 'note-' + Date.now(), title: title, group: 'source', fav: false,
+          src: 'raw', srcLabel: 'raw', srcDesc: '本地新建 · ' + new Date().toLocaleDateString('zh-CN'),
+          updated: '刚刚', words: body.length, tags: ['随手记'],
+          excerpt: body ? (body.length > 58 ? body.slice(0, 58) + '…' : body) : '暂无正文',
+          body: [body || '（这篇笔记还没有正文，先记录一个标题，稍后补充。）']
+        };
+        NOTES.unshift(note);
+        renderHome(); renderFavs(); renderStats();
+        btn.disabled = false;
+        $('#note-title').value = ''; $('#note-body').value = '';
+        $('#note-title').classList.remove('invalid');
+        hideSheets(); toast('笔记已保存');
+      }, 700);
+    }
+
+    /* ─── AI 问答 ─────────────────────────────────────────── */
+    var ai = { msgs: [], typing: false, fallback: null };
+    var AI_ANSWER = '可以先从「捕获—加工—归档」三层流水线入手：日常想法先进收件箱，每周做一次剪枝（见《个人知识库运行手册》）。检索侧先用全文搜索与标签就能覆盖八成需求；等笔记超过一千篇，再考虑语义检索——记住「检索质量决定生成质量」（见《RAG 检索增强生成入门笔记》）。';
+    var AI_SOURCES = [{ id: 'kb-runbook', title: '个人知识库运行手册' }, { id: 'rag-notes', title: 'RAG 检索增强生成入门笔记' }];
+    function renderAi() {
+      var box = $('#ai-msgs');
+      if (!ai.msgs.length) {
+        box.innerHTML = '<div class="ai-msg hint">输入一个问题，例如「如何搭建个人知识库？」</div>';
+        return;
+      }
+      box.innerHTML = ai.msgs.map(function (m) {
+        if (m.role === 'user') return '<div class="ai-msg user">' + esc(m.text) + '</div>';
+        if (m.role === 'answer') {
+          return '<div class="ai-msg answer"><p>' + esc(m.text) + '</p>' +
+            '<div class="ai-sources">' + m.sources.map(function (s) {
+              return '<button class="chip chip-link" data-open="' + s.id + '">' + esc(s.title) + '</button>';
+            }).join('') + '</div>' +
+            '<button class="ai-retry" data-ai-retry>重新生成</button></div>';
+        }
+        if (m.role === 'error') {
+          return '<div class="ai-msg answer"><p>' + esc(m.text) + '</p><button class="ai-retry" data-ai-retry>重试</button></div>';
+        }
+        return '';
+      }).join('');
+      if (ai.typing) {
+        box.insertAdjacentHTML('beforeend',
+          '<div class="ai-msg answer typing" role="status"><span class="t-dot"></span><span class="t-dot"></span><span class="t-dot"></span><span class="typing-label">正在检索知识库…</span></div>');
+      }
+      box.scrollTop = box.scrollHeight;
+    }
+    function finishAi(retry) {
+      clearTimeout(ai.fallback);
+      ai.typing = false;
+      $('#ai-send').disabled = !$('#ai-input').value.trim();
+      if (retry) ai.msgs.pop(); /* 移除上一条回答/错误 */
+      ai.msgs.push({ role: 'answer', text: AI_ANSWER, sources: AI_SOURCES.slice() });
+      renderAi();
+    }
+    function sendAi() {
+      var inp = $('#ai-input');
+      var v = inp.value.trim();
+      if (!v || ai.typing) return;
+      ai.msgs.push({ role: 'user', text: v });
+      inp.value = '';
+      $('#ai-send').disabled = true;
+      ai.typing = true;
+      renderAi();
+      /* 15 秒超时兜底 → 错误 + 重试 */
+      ai.fallback = setTimeout(function () {
+        if (!ai.typing) return;
+        ai.typing = false;
+        ai.msgs.push({ role: 'error', text: '检索超时了（超过 15 秒）。网络可能不稳定，请重试，或稍后再来。' });
+        renderAi();
+      }, 15000);
+      setTimeout(function () { if (ai.typing) finishAi(false); }, 1600);
+    }
+    function retryAi() {
+      if (ai.typing) return;
+      ai.typing = true;
+      renderAi();
+      setTimeout(function () { if (ai.typing) finishAi(true); }, 1400);
+    }
+
+    /* ─── 主题 ────────────────────────────────────────────── */
+    var mqDark = window.matchMedia('(prefers-color-scheme: dark)');
+    function applyTheme(v) {
+      state.theme = v;
+      try { localStorage.setItem('ua-theme', v); } catch (e) {}
+      var dark = v === 'dark' || (v === 'system' && mqDark.matches);
+      screen.dataset.theme = dark ? 'dark' : 'light';
+      $('#set-appearance-sub').textContent = THEME_LABEL[v];
+      $$('#sheet-appearance .option-row').forEach(function (r) {
+        r.classList.toggle('checked', r.dataset.value === v);
+      });
+    }
+    if (mqDark.addEventListener) mqDark.addEventListener('change', function () { if (state.theme === 'system') applyTheme('system'); });
+
+    /* ─── 同步 ────────────────────────────────────────────── */
+    function doSync() {
+      if (state.syncing) return;
+      state.syncing = true;
+      var row = $('#setting-sync');
+      row.classList.add('syncing');
+      var sub = $('#set-sync-sub');
+      sub.textContent = '正在同步…';
+      var spin = document.createElement('span');
+      spin.className = 'spinner';
+      spin.setAttribute('aria-hidden', 'true');
+      row.insertBefore(spin, row.querySelector('.chevron'));
+      setTimeout(function () {
+        state.syncing = false;
+        row.classList.remove('syncing');
+        if (spin.parentNode) spin.parentNode.removeChild(spin);
+        sub.textContent = '已同步 · 刚刚';
+        toast('同步完成');
+      }, 1200);
+    }
+
+    /* ─── 分享 ────────────────────────────────────────────── */
+    function openShare(n) {
+      if (!n) return;
+      $('#share-url').textContent = 'ua.kb/notes/' + n.id;
+      showSheet('sheet-share');
+    }
+    function copyText(txt, ok) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(function () { toast(ok); }).catch(function () { legacyCopy(txt, ok); });
+      } else {
+        legacyCopy(txt, ok);
+      }
+    }
+    function legacyCopy(txt, ok) {
+      var ta = document.createElement('textarea');
+      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); toast(ok); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+
+    /* ─── 导航 ────────────────────────────────────────────── */
+    function goTab(name) {
+      state.tab = name;
+      try { localStorage.setItem('ua-tab', name); } catch (e) {}
+      $$('.view').forEach(function (v) {
+        var act = v.id === 'view-' + name;
+        v.classList.toggle('active', act);
+        v.setAttribute('aria-hidden', act ? 'false' : 'true');
+      });
+      $$('.tab').forEach(function (t) {
+        var act = t.dataset.tab === name;
+        t.classList.toggle('active', act);
+        if (act) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
+      });
+      if (name === 'favs') renderFavs();
+      if (name === 'me') renderStats();
+      if (name === 'home') renderHome();
+      screen.classList.remove('detail-open');
+      $('#view-detail').setAttribute('aria-hidden', 'true');
+      currentNote = null;
+    }
+
+    /* ─── 事件绑定 ────────────────────────────────────────── */
+    $('#search-input').addEventListener('input', function (e) {
+      state.query = e.target.value;
+      $('#search-clear').classList.toggle('hidden', !state.query);
+      renderHome();
+    });
+    function clearSearch() {
+      var i = $('#search-input');
+      i.value = ''; state.query = '';
+      $('#search-clear').classList.add('hidden');
+      renderHome(); i.focus();
+    }
+    $('#search-clear').addEventListener('click', clearSearch);
+    $('#search-clear2').addEventListener('click', clearSearch);
+
+    $$('.tab').forEach(function (t) {
+      t.addEventListener('click', function () { goTab(t.dataset.tab); });
+    });
+    $('#btn-to-profile').addEventListener('click', function () { goTab('me'); });
+    $('#btn-go-home').addEventListener('click', function () { goTab('home'); });
+
+    $('#btn-new-note').addEventListener('click', function () { showSheet('sheet-note'); });
+    $('#btn-ai').addEventListener('click', function () { showSheet('sheet-ai'); renderAi(); });
+    $('#note-cancel').addEventListener('click', hideSheets);
+    $('#note-save').addEventListener('click', saveNote);
+    $('#note-title').addEventListener('input', function () {
+      if ($('#note-title').classList.contains('invalid')) validateTitle(false);
+    });
+    $('#note-title').addEventListener('blur', function () { validateTitle(true); });
+    $('#note-body').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) saveNote();
+    });
+
+    $('#ai-send').addEventListener('click', sendAi);
+    $('#ai-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); sendAi(); } });
+    $('#ai-input').addEventListener('input', function (e) { $('#ai-send').disabled = !e.target.value.trim(); });
+
+    $('#detail-back').addEventListener('click', closeDetail);
+    $('#detail-star').addEventListener('click', function () { if (currentNote) toggleFav(currentNote.id); });
+    $('#detail-share').addEventListener('click', function () { openShare(currentNote); });
+    $('#detail-source').addEventListener('click', function () {
+      if (!currentNote) return;
+      copyText(currentNote.srcDesc, '已拷贝来源链接');
+    });
+
+    $('#share-copy').addEventListener('click', function () {
+      copyText('https://' + $('#share-url').textContent, '链接已拷贝');
+    });
+    $$('.share-app').forEach(function (b) {
+      b.addEventListener('click', function () {
+        hideSheets();
+        toast('已选择「' + b.dataset.app + '」（演示）');
+      });
+    });
+
+    $('#setting-sync').addEventListener('click', doSync);
+    $('#setting-appearance').addEventListener('click', function () { showSheet('sheet-appearance'); });
+    $('#setting-about').addEventListener('click', function () { showSheet('sheet-about'); });
+    $$('#sheet-appearance .option-row').forEach(function (r) {
+      r.addEventListener('click', function () { applyTheme(r.dataset.value); hideSheets(); });
+    });
+    $('#about-done').addEventListener('click', hideSheets);
+
+    $('#scrim').addEventListener('click', hideSheets);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        if ($('#sheet-layer').classList.contains('open')) hideSheets();
+        else if (screen.classList.contains('detail-open')) closeDetail();
+      }
+    });
+
+    /* 委托：打开详情 / 收藏切换 / AI 重试 / 搜索建议 */
+    document.addEventListener('click', function (e) {
+      var retry = e.target.closest('[data-ai-retry]');
+      if (retry) { retryAi(); return; }
+      var setq = e.target.closest('[data-set-query]');
+      if (setq) {
+        var i = $('#search-input');
+        i.value = setq.dataset.setQuery;
+        state.query = i.value;
+        $('#search-clear').classList.remove('hidden');
+        renderHome(); i.focus();
+        return;
+      }
+      var fav = e.target.closest('[data-toggle-fav]');
+      if (fav) { toggleFav(fav.dataset.toggleFav); return; }
+      var open = e.target.closest('[data-open]');
+      if (open) {
+        if ($('#sheet-layer').classList.contains('open')) hideSheets();
+        openDetail(open.dataset.open);
+      }
+    });
+    document.addEventListener('keydown', function (e) {
+      var open = e.target.closest('[data-open]');
+      if (open && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        openDetail(open.dataset.open);
+      }
+    });
+
+    /* ─── 初始化 ──────────────────────────────────────────── */
+    renderHome(); renderFavs(); renderStats(); renderAi();
+    applyTheme(state.theme);
+    var savedTab = (function () { try { return localStorage.getItem('ua-tab'); } catch (e) { return null; } })();
+    goTab(['home', 'favs', 'me'].indexOf(savedTab) !== -1 ? savedTab : 'home');
+  })();
+  </script>
+</body>
+</html>
