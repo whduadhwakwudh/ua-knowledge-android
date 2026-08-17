@@ -15,6 +15,12 @@ if (-not (Test-Path 'node_modules')) {
     npm ci
 }
 
+# Task 9 order: tests first, then web bundle, cap sync, gradle. Any failure
+# exits nonzero and leaves the previous dist file untouched until the new APK
+# exists (the copy happens only after a successful build).
+npm test
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 npm run build:web
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
