@@ -120,6 +120,10 @@
       position: relative; width: 100%; height: 100%;
       background: var(--bg); border-radius: 44px; overflow: hidden;
       display: flex; flex-direction: column;
+      /* Text color must follow the theme variable: without this, .screen
+         children inherit body's color (root --fg, black), so dark mode
+         showed black text on a dark background. */
+      color: var(--fg);
     }
     .statusbar {
       flex: 0 0 47px; padding: 18px 26px 0; position: relative; z-index: 25;

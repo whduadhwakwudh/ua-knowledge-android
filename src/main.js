@@ -394,7 +394,7 @@ export async function bootstrapApp(options = {}) {
           // progress events to 100ms so this is lightweight.
         },
       });
-      ui.toast('下载完成，已请求系统确认安装');
+      ui.toast('下载完成，请在弹出的系统安装确认中点击「安装」；首次使用需在系统设置允许「安装未知应用」');
     } catch (err) {
       if (err && err.code === 'HASH_MISMATCH') {
         ui.toast('校验失败，已删除文件');
@@ -451,6 +451,24 @@ export async function bootstrapApp(options = {}) {
       state.syncError = '连接设置已失效，请重新配置';
     }
     ui.update(state);
+  }
+
+  /* ─── Android hardware back: sheet → detail → exit ─────────── */
+  if (typeof Capacitor !== 'undefined' && Capacitor.getPlatform?.() !== 'web') {
+    const { App } = await import('@capacitor/app');
+    App.addListener('backButton', () => {
+      if (ui.isSheetOpen()) {
+        // Close the open sheet first; keep the app foregrounded.
+        ui.closeSheets();
+        return;
+      }
+      if (state.detail) {
+        state.detail = null;
+        ui.update(state);
+        return;
+      }
+      // Top level: let the platform default exit the app.
+    });
   }
 
   return {

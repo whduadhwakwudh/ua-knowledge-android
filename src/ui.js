@@ -111,6 +111,12 @@ export function mountApp(container, wiring = {}) {
     if (lastFocus && lastFocus.focus) lastFocus.focus();
   }
 
+  /** True when any bottom sheet is currently open (Android back handling). */
+  function isSheetOpen() {
+    const layer = $('#sheet-layer');
+    return !!layer && layer.classList.contains('open');
+  }
+
   function openConnectionSheet() {
     openSheet('sheet-connection');
     if ($('#conn-base-url')) {
@@ -586,6 +592,7 @@ export function mountApp(container, wiring = {}) {
     toast,
     openConnectionSheet,
     closeSheets,
+    isSheetOpen,
     setConnectionBusy,
     setConnectionStatus,
     showConnectionErrors,

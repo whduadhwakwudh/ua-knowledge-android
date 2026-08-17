@@ -51,4 +51,14 @@
     -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+      Installing a downloaded APK requires this permission on Android 8+
+      (API 26+): without it the system package installer silently ignores the
+      ACTION_VIEW intent and no confirmation dialog appears. The user must
+      also allow "install unknown apps" for this app in system settings on
+      first use (Android prompts for that on first install request).
+      This app only ever uses the system installer confirmation — never a
+      silent install API.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>
