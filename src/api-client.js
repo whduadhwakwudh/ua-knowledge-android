@@ -21,6 +21,13 @@ import { normalizeBaseUrl, validateToken } from './connection-store.js';
 export const DEFAULT_MARKDOWN_MAX_BYTES = 5_242_880; // 5 MiB
 /** Manifest response cap — 5 MiB, matching the server's markdown cap. */
 export const MANIFEST_MAX_BYTES = 5_242_880; // 5 MiB
+/**
+ * Default per-request timeout. A hung connection (no response, black-hole
+ * route, slow server) must never wedge a sync forever: the client aborts the
+ * fetch and raises ApiError(NETWORK) so the UI can surface the failure and
+ * allow a retry.
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
 export class ApiError extends Error {
   static NETWORK = 'NETWORK';
@@ -214,6 +221,7 @@ export function createApiClient({
   fetchImpl = fetch,
   markdownMaxBytes = DEFAULT_MARKDOWN_MAX_BYTES,
   manifestMaxBytes = MANIFEST_MAX_BYTES,
+  timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
 }) {
   // Fail fast at construction with generic TypeError messages (never echo the
   // candidate values). Reuses the connection-store validation so the client
@@ -263,10 +271,34 @@ export function createApiClient({
 
   async function request(pathname, { headers } = {}) {
     let res;
+    // Timeout guard: a request that neither completes nor errors (black-hole
+    // route, stalled server) must not hold `sync()` in the download phase
+    // forever. AbortController covers real fetch; Promise.race guarantees the
+    // timeout fires even when an injected fetchImpl ignores `signal`.
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        if (controller) controller.abort();
+        reject(new ApiError(ApiError.NETWORK, 'network request timed out'));
+      }, timeoutMs);
+    });
     try {
-      res = await fetchImpl(origin + pathname, { method: 'GET', headers });
-    } catch {
+      res = await Promise.race([
+        fetchImpl(origin + pathname, {
+          method: 'GET',
+          headers,
+          ...(controller ? { signal: controller.signal } : {}),
+        }),
+        timeout,
+      ]);
+    } catch (err) {
+      // Timeout (NETWORK) and any transport failure both map to NETWORK; never
+      // leak the underlying error (it may carry a URL or credentials).
+      if (err instanceof ApiError) throw err;
       throw new ApiError(ApiError.NETWORK, 'network request failed');
+    } finally {
+      if (timer) clearTimeout(timer);
     }
     if (res.status === 304) return res;
     throwForStatus(res);

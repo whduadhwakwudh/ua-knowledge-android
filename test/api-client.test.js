@@ -600,6 +600,34 @@ describe('getManifest()', () => {
     expect(err.message).not.toContain(FAKE_TOKEN);
     expect(JSON.stringify(err)).not.toContain(FAKE_TOKEN);
   });
+
+  it('times out a hung request with NETWORK instead of hanging forever', async () => {
+    // fetchImpl that never settles, ignoring any signal — the client must
+    // still fail via the race timeout.
+    const client = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      timeoutMs: 20,
+      fetchImpl: () => new Promise(() => {}),
+    });
+    const err = await client.getManifest().then(
+      () => null,
+      (e) => e,
+    );
+    expect(err).not.toBeNull();
+    expect(err.code).toBe(ApiError.NETWORK);
+    expect(err.message).not.toContain(FAKE_TOKEN);
+  });
+
+  it('a fast response is not affected by the timeout', async () => {
+    const client = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      timeoutMs: 5_000,
+      fetchImpl: async () => jsonResponse({ ok: true }),
+    });
+    await expect(client.health()).resolves.toEqual({ ok: true });
+  });
 });
 
 describe('getDocument()', () => {

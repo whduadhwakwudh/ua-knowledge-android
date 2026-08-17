@@ -112,11 +112,25 @@ function defaultContainer() {
 }
 
 export async function bootstrapApp(options = {}) {
-  const { container = defaultContainer(), isNative } = options;
-  const connectionStore = await createProductionConnectionStore({ isNative });
-  const db = await openKnowledgeDb();
+  const {
+    container = defaultContainer(),
+    isNative,
+    connectionStoreImpl,
+    dbImpl,
+    fetchImpl,
+    apiTimeoutMs,
+  } = options;
+  const connectionStore = connectionStoreImpl ?? (await createProductionConnectionStore({ isNative }));
+  const db = dbImpl ?? (await openKnowledgeDb());
   const favoritesStore = createFavoritesStore(db);
-  const stored = await connectionStore.load();
+  let stored;
+  try {
+    stored = await connectionStore.load();
+  } catch {
+    // Secure-storage read failed (keystore unavailable/corrupt). Keep the app
+    // usable: no saved connection, empty state, prompt to configure.
+    stored = { configured: false, baseUrl: null, tokenPresent: false, token: null };
+  }
 
   const state = blankRuntimeState();
   state.baseUrl = stored.baseUrl;
@@ -193,14 +207,22 @@ export async function bootstrapApp(options = {}) {
   }
 
   async function rebuildApi(baseUrl, token) {
-    api = createApiClient({ baseUrl, token });
+    api = createApiClient({ baseUrl, token, fetchImpl, timeoutMs: apiTimeoutMs });
     engine = createSyncEngine({ api, db });
     await refreshCachedContent();
   }
 
   /* ─── sync ──────────────────────────────────────────────── */
   async function runSync() {
-    if (state.syncing || !engine || !api) return;
+    if (state.syncing) return;
+    if (!engine || !api) {
+      // Connection settings were saved but the API client/engine failed to
+      // rebuild (e.g. token missing in secure storage, or restore threw).
+      // Never fail silently: tell the user and open the connection sheet.
+      ui.toast('请先完成连接设置');
+      ui.openConnectionSheet();
+      return;
+    }
     state.syncing = true;
     state.syncError = null;
     state.syncPhase = null;
@@ -419,7 +441,15 @@ export async function bootstrapApp(options = {}) {
 
   ui.update(state);
   if (stored.configured) {
-    await rebuildApi(stored.baseUrl, stored.token);
+    try {
+      await rebuildApi(stored.baseUrl, stored.token);
+    } catch {
+      // Saved settings could not be rebuilt (missing/invalid token in secure
+      // storage, or adapter failure). Keep the app usable: fall back to the
+      // unconfigured prompt instead of leaving a dead sync button.
+      state.connection = 'unconfigured';
+      state.syncError = '连接设置已失效，请重新配置';
+    }
     ui.update(state);
   }
 

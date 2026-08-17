@@ -95,8 +95,11 @@ export function mountApp(container, wiring = {}) {
     const layer = $('#sheet-layer');
     layer.classList.add('open');
     layer.setAttribute('aria-hidden', 'false');
-    const focusTarget = sheet.querySelector('input, textarea, .option-row, .copy-row, .share-app, button');
-    if (focusTarget) focusTarget.focus();
+    // Only focus a real text input/textarea. Focusing a plain button or an
+    // option row scrolls the page to that element in some WebViews (the
+    // "sheet opens but the page jumps up" bug), so skip non-input targets.
+    const inputTarget = sheet.querySelector('input, textarea');
+    if (inputTarget) inputTarget.focus();
   }
 
   function closeSheets() {
