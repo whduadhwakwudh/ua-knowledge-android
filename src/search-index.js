@@ -4,10 +4,17 @@
  *
  * Tokenization:
  * - Latin words/numbers are lowercased and kept as single tokens;
- * - every contiguous CJK run is emitted as unigrams AND bigrams
- *   (知识库 → 知, 识, 库, 知识, 识库) so both single-character and
- *   two-character queries match;
- * - punctuation and whitespace split tokens.
+ * - every contiguous Basic-CJK run (U+4E00–U+9FFF only) is emitted as
+ *   unigrams AND bigrams (知识库 → 知, 识, 库, 知识, 识库) so both
+ *   single-character and two-character queries match;
+ * - punctuation and whitespace split tokens. Hyphens, underscores and
+ *   apostrophes are plain separators, so 'Transformer-v2' is indexed as
+ *   the two tokens 'transformer' and 'v2'.
+ *
+ * LIMITATION: only the Basic CJK block is tokenized. Runs outside it —
+ * kana (ひらがな/カタカナ), CJK Extension A and other non-Basic-CJK
+ * scripts — are not split into unigrams/bigrams and are silently dropped
+ * from the index; queries for them therefore return no matches.
  *
  * Fields: title (boost 3), body (boost 1), relativePath (boost 1);
  * storeFields: title, relativePath, id. The index is serializable per
@@ -19,7 +26,9 @@
 import MiniSearch from 'minisearch';
 
 const CJK_RUN = /^[\u4e00-\u9fff]+$/;
-const SCAN_RE = /[A-Za-z0-9]+(?:[-_'][A-Za-z0-9]+)*|[\u4e00-\u9fff]+/g;
+// Basic-CJK only (U+4E00–U+9FFF): kana / CJK Extension A runs are not
+// covered and are dropped by the tokenizer (see LIMITATION above).
+const SCAN_RE = /[A-Za-z0-9]+|[\u4e00-\u9fff]+/g;
 
 /** Pure tokenizer: lowercase Latin tokens + CJK unigram/bigram expansion. */
 export function tokenizeCJK(text) {

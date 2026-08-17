@@ -7,11 +7,12 @@
  *   iframe, style, event handlers and every other non-allowlisted element or
  *   attribute are removed);
  * - every <a href> and <img src> is re-validated against an http(s)-or-
- *   relative URL policy, external links get target="_blank" +
- *   rel="noopener noreferrer", and anything else loses its URL attribute.
+ *   relative URL policy; only http(s) links get target="_blank" +
+ *   rel="noopener noreferrer", anything else loses its URL attribute.
  *
- * Relative links are deliberately left as-is; resolving them against manifest
- * artifact URLs happens later in the UI batch, not here.
+ * Relative links are deliberately left as-is — no target/rel, href kept
+ * verbatim; resolving them against manifest artifact URLs happens later in
+ * the UI batch, not here.
  */
 
 import { marked } from 'marked';
@@ -76,15 +77,30 @@ export function renderMarkdown(markdown) {
     ALLOW_DATA_ATTR: false,
   });
 
-  // Enforce the URL policy and harden links after sanitization.
+  // Enforce the URL policy and harden links after sanitization. Only http(s)
+  // links are treated as external (target="_blank" + rel); relative links
+  // keep their href verbatim and remain untouched.
   const document = new DOMParser().parseFromString(sanitized, 'text/html');
   for (const link of document.querySelectorAll('a[href]')) {
-    if (!isSafeUrl(link.getAttribute('href'))) {
+    const href = link.getAttribute('href');
+    if (!isSafeUrl(href)) {
       link.removeAttribute('href');
       continue;
     }
-    link.setAttribute('target', '_blank');
-    link.setAttribute('rel', 'noopener noreferrer');
+    let parsed;
+    try {
+      parsed = new URL(href, 'https://local.invalid/');
+    } catch {
+      link.removeAttribute('href');
+      continue;
+    }
+    // A link is external only when it resolves away from the dummy base:
+    // absolute http(s) URLs change the origin, relative references stay on
+    // it (their parsed protocol merely inherits the dummy https base).
+    if (parsed.origin !== 'https://local.invalid') {
+      link.setAttribute('target', '_blank');
+      link.setAttribute('rel', 'noopener noreferrer');
+    }
   }
   for (const image of document.querySelectorAll('img[src]')) {
     if (!isSafeUrl(image.getAttribute('src'))) {

@@ -30,6 +30,14 @@ describe('tokenizeCJK', () => {
   it('splits on punctuation and whitespace and ignores empties', () => {
     expect(tokenizeCJK('Note: 知识库, 2026!')).toEqual(['note', '知', '识', '库', '知识', '识库', '2026']);
   });
+
+  it('splits hyphen, underscore and apostrophe compounds into part tokens', () => {
+    // Hyphen/underscore/apostrophe are separators like any other punctuation:
+    // 'Transformer-v2' must be reachable by 'transformer' OR 'v2' alone.
+    expect(tokenizeCJK('Transformer-v2')).toEqual(['transformer', 'v2']);
+    expect(tokenizeCJK('RAG_eval')).toEqual(['rag', 'eval']);
+    expect(tokenizeCJK("don't")).toEqual(['don', 't']);
+  });
 });
 
 function doc(id, title, body, relativePath) {
@@ -84,6 +92,28 @@ describe('buildSearchIndex / query', () => {
   it('returns no results for an empty query without throwing', () => {
     const docs = [doc('sha-e', '标题', '知识库 内容', 'wiki/e.md')];
     expect(buildSearchIndex(docs).query('')).toEqual([]);
+  });
+
+  it('indexes hyphen/underscore compound titles so any part is searchable', () => {
+    const docs = [
+      doc('sha-h', 'Transformer-v2 指南', '介绍新一代模型', 'wiki/h.md'),
+      doc('sha-r', 'RAG-eval 报告', '评估框架说明', 'wiki/r.md'),
+      doc('sha-k', 'Transformer-v2 知识库', '中文知识库维护指南', 'wiki/k.md'),
+    ];
+    const index = buildSearchIndex(docs);
+
+    // Each part alone matches, and the exact compound query also matches
+    // (AND semantics over the two part tokens).
+    expect(index.query('transformer').map((r) => r.id)).toContain('sha-h');
+    expect(index.query('v2').map((r) => r.id)).toContain('sha-h');
+    expect(index.query('transformer-v2').map((r) => r.id)).toContain('sha-h');
+    expect(index.query('rag').map((r) => r.id)).toContain('sha-r');
+    expect(index.query('eval').map((r) => r.id)).toContain('sha-r');
+
+    // CJK unigram/bigram extraction alongside a hyphenated latin token is
+    // unaffected: 知识库 still matches 知识库.
+    expect(index.query('知识库').map((r) => r.id)).toContain('sha-k');
+    expect(index.query('知识').map((r) => r.id)).toContain('sha-k');
   });
 });
 

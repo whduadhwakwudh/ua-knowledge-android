@@ -93,9 +93,14 @@ describe('renderMarkdown — link attributes', () => {
     expect(html).toContain('href="https://example.com/docs"');
   });
 
-  it('leaves relative links untouched (manifest resolution happens later in the UI)', () => {
+  it('leaves relative links untouched (no target/rel; manifest resolution happens later in the UI)', () => {
     const html = renderMarkdown('[note](notes/draft-01.md)');
     expect(html).toContain('href="notes/draft-01.md"');
+    // The "left as-is" contract: relative links are not treated as external
+    // and must NOT be opened in a new tab.
+    expect(html).not.toContain('target=');
+    expect(html).not.toContain('rel=');
+    expect(html).not.toContain('noopener');
   });
 
   it('strips hrefs that resolve to unexpected schemes (data:, mailto:)', () => {
