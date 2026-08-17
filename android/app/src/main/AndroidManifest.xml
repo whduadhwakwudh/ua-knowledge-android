@@ -36,6 +36,19 @@
     </application>
 
     <!-- Permissions -->
+    <!--
+      No permission additions are required beyond INTERNET (declared below):
+      - APK downloads land in the app-private Directory.Data (context
+        getFilesDir()), so no storage permission is needed on any Android API
+        level (file-transfer / filesystem plugins);
+      - opening the downloaded APK goes through
+        @capacitor-community/file-opener, whose FileOpenerProvider (authority
+        `<applicationId>.file.opener.provider`) merges from the plugin manifest
+        and covers the internal files dir;
+      - the local UaFileHash plugin only reads app-private files.
+      Install confirmation is the system package installer's ACTION_VIEW flow;
+      this app never requests silent install.
+    -->
 
     <uses-permission android:name="android.permission.INTERNET" />
 </manifest>
