@@ -10,6 +10,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!--
+    Content Security Policy (defense in depth): the app ships no inline
+    script — all logic lives in ./assets/app.js — so scripts are restricted
+    to 'self'. Inline <style> is the app's own CSS. Images may be data: or
+    https (external markdown images). connect-src https: allows the
+    user-configured API origin (always https except localhost dev). No
+    object/frame/form sinks at all. Markdown bodies are DOMPurify-sanitized;
+    CSP is the second layer.
+  -->
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'"
+  />
   <title>UA 个人知识库</title>
   <link rel="icon" href="data:," />
   <style>
