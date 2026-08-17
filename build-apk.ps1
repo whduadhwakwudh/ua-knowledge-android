@@ -10,6 +10,9 @@ if (-not (Test-Path 'node_modules')) {
     npm install
 }
 
+npm run build:web
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 npx cap sync android
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
