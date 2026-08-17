@@ -3,6 +3,10 @@
  *
  * Output: www/assets/app.js (the www/assets/ directory is gitignored).
  * Minification is on by default; disable with `--no-minify` or `MINIFY=false`.
+ * Legal comments (license banners, @license/@preserve headers) are kept
+ * inline in the bundle (`--legal-comments=inline`) so bundled third-party
+ * licenses survive minification; this esbuild version has no `preserve`
+ * mode, and `none` (the previous setting) stripped them.
  * Exits non-zero on any build error.
  *
  * NOTE: the binary is spawned with stdio 'inherit' on purpose. The sandboxed
@@ -44,7 +48,7 @@ const args = [
   '--platform=browser',
   '--target=es2020',
   '--outfile=' + path.join(rootDir, 'www', 'assets', 'app.js'),
-  '--legal-comments=none',
+  '--legal-comments=inline',
   '--log-level=info',
 ];
 if (minify) args.push('--minify');

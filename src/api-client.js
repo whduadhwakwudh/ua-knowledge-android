@@ -8,9 +8,19 @@
  * - Response bodies are never read for error statuses, and thrown errors
  *   carry only stable codes plus generic messages.
  * - No automatic retries in this batch.
+ * - Response bodies are size-bounded: the manifest and document bodies are
+ *   capped (content-length pre-check before reading, UTF-8 byte count after
+ *   reading) so a hostile or broken server cannot make us buffer unbounded
+ *   data. See MANIFEST_MAX_BYTES / markdownMaxBytes.
+ * - HTTP status mapping: 401 → UNAUTHORIZED, 404 → NOT_FOUND, 429 →
+ *   RATE_LIMITED, any other 4xx → REQUEST, ≥500 → SERVER.
  */
 
+import { normalizeBaseUrl, validateToken } from './connection-store.js';
+
 export const DEFAULT_MARKDOWN_MAX_BYTES = 5_242_880; // 5 MiB
+/** Manifest response cap — 5 MiB, matching the server's markdown cap. */
+export const MANIFEST_MAX_BYTES = 5_242_880; // 5 MiB
 
 export class ApiError extends Error {
   static NETWORK = 'NETWORK';
@@ -20,6 +30,8 @@ export class ApiError extends Error {
   static SCHEMA = 'SCHEMA';
   static INTEGRITY = 'INTEGRITY';
   static NOT_FOUND = 'NOT_FOUND';
+  /** Client-visible request rejection (other 4xx that is not a mapped case). */
+  static REQUEST = 'REQUEST';
 
   constructor(code, message, { status = null, retryAfterSeconds = null } = {}) {
     super(message);
@@ -188,8 +200,22 @@ export function createApiClient({
   token,
   fetchImpl = fetch,
   markdownMaxBytes = DEFAULT_MARKDOWN_MAX_BYTES,
+  manifestMaxBytes = MANIFEST_MAX_BYTES,
 }) {
-  const origin = typeof baseUrl === 'string' ? baseUrl.replace(/\/+$/, '') : '';
+  // Fail fast at construction with generic TypeError messages (never echo the
+  // candidate values). Reuses the connection-store validation so the client
+  // and the settings UI agree on what a valid base URL / device token is.
+  // connection-store.js imports nothing from this module, so this import is
+  // cycle-free.
+  const urlResult = normalizeBaseUrl(baseUrl);
+  if (!urlResult.ok) {
+    throw new TypeError(urlResult.error);
+  }
+  const tokenResult = validateToken(token);
+  if (!tokenResult.ok) {
+    throw new TypeError(tokenResult.error);
+  }
+  const origin = urlResult.value;
 
   const authHeaders = () => ({ Authorization: `Bearer ${token}`, Accept: 'application/json' });
   const anonymousHeaders = () => ({ Accept: 'application/json' });
@@ -211,6 +237,11 @@ export function createApiClient({
     }
     if (status >= 500) {
       throw new ApiError(ApiError.SERVER, 'server error', { status });
+    }
+    // Any other 4xx (403, 405, 422, …) is a hard client-side rejection that
+    // is not worth retrying; NOT_FOUND keeps its own stable code above.
+    if (status >= 400 && status < 500) {
+      throw new ApiError(ApiError.REQUEST, 'request rejected', { status });
     }
     if (status < 200 || status >= 300) {
       throw new ApiError(ApiError.SERVER, 'unexpected response', { status });
@@ -245,9 +276,32 @@ export function createApiClient({
 
   async function getManifest() {
     const res = await request('/v1/manifest', { headers: authHeaders() });
+
+    // Mirror the getDocument() cap pattern: reject on the declared
+    // content-length before reading, then enforce the real UTF-8 byte count
+    // after reading, so a hostile or broken server cannot make us buffer an
+    // unbounded body or JSON.parse one.
+    const contentLengthHeader = res.headers.get('content-length');
+    if (contentLengthHeader !== null && contentLengthHeader !== '') {
+      const declared = Number(contentLengthHeader);
+      if (Number.isSafeInteger(declared) && declared > manifestMaxBytes) {
+        throw new ApiError(ApiError.INTEGRITY, 'manifest exceeds the size limit');
+      }
+    }
+
+    let text;
+    try {
+      text = await res.text();
+    } catch {
+      throw new ApiError(ApiError.SCHEMA, 'could not read manifest body');
+    }
+    if (new TextEncoder().encode(text).length > manifestMaxBytes) {
+      throw new ApiError(ApiError.INTEGRITY, 'manifest exceeds the size limit');
+    }
+
     let body;
     try {
-      body = await res.json();
+      body = JSON.parse(text);
     } catch {
       throw new ApiError(ApiError.SCHEMA, 'invalid manifest payload');
     }

@@ -324,6 +324,45 @@ describe('createConnectionStore', () => {
     });
   });
 
+  it('a failed re-save deliberately removes previously saved valid settings (fail-closed destroys stale credentials)', async () => {
+    const adapter = spyAdapter();
+    // Previously saved, valid pair — as if an earlier save had succeeded.
+    await adapter.set(BASE_URL_KEY, 'https://old.example.com');
+    await adapter.set(DEVICE_TOKEN_KEY, FAKE_TOKEN);
+    const store = createConnectionStore({
+      get: adapter.get,
+      set: async (key, value) => {
+        if (key === DEVICE_TOKEN_KEY) {
+          throw new Error('keystore write boom');
+        }
+        await adapter.set(key, value);
+      },
+      remove: adapter.remove,
+    });
+    const error = await store
+      .save({ baseUrl: 'https://new.example.com/', token: FAKE_TOKEN })
+      .then(
+        () => null,
+        (e) => e,
+      );
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toBe('failed to persist connection settings');
+    // Both keys are removed, including the previously saved valid pair: a
+    // transient keystore error means the store cannot trust that the old
+    // credentials survived intact, so they are deliberately destroyed and the
+    // user re-enters them — no stale/mismatched pair can ever resurface.
+    expect(adapter.calls.remove[0]).toBe(DEVICE_TOKEN_KEY);
+    expect(adapter.calls.remove).toContain(BASE_URL_KEY);
+    expect(adapter.data.has(BASE_URL_KEY)).toBe(false);
+    expect(adapter.data.has(DEVICE_TOKEN_KEY)).toBe(false);
+    expect(await store.load()).toEqual({
+      configured: false,
+      baseUrl: null,
+      tokenPresent: false,
+      token: null,
+    });
+  });
+
   it('does not leak cleanup errors when the failed-save cleanup removal throws', async () => {
     const adapter = spyAdapter();
     const store = createConnectionStore({

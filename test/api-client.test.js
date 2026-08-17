@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ApiError, createApiClient } from '../src/api-client.js';
+import { ApiError, createApiClient, MANIFEST_MAX_BYTES } from '../src/api-client.js';
 
 /**
  * Test-only fake device token: valid shape per the production pattern,
@@ -47,6 +47,7 @@ describe('ApiError', () => {
     expect(ApiError.SCHEMA).toBe('SCHEMA');
     expect(ApiError.INTEGRITY).toBe('INTEGRITY');
     expect(ApiError.NOT_FOUND).toBe('NOT_FOUND');
+    expect(ApiError.REQUEST).toBe('REQUEST');
   });
 
   it('carries code/status and serializes without leaking any request data', () => {
@@ -171,6 +172,69 @@ describe('getManifest()', () => {
     expect(captured.opts.headers.Authorization).toBe(`Bearer ${FAKE_TOKEN}`);
     expect(result).toEqual(validManifest);
     expect(Object.keys(result).sort()).toEqual(['entries', 'generatedAt', 'revision', 'schemaVersion']);
+  });
+
+  it('rejects content-length above the manifest cap with INTEGRITY before reading the body', async () => {
+    let bodyRead = false;
+    const client = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      manifestMaxBytes: 1024,
+      fetchImpl: async () => ({
+        status: 200,
+        ok: true,
+        headers: {
+          get: (name) => (name.toLowerCase() === 'content-length' ? '2048' : null),
+        },
+        text: async () => {
+          bodyRead = true;
+          return '';
+        },
+        json: async () => {
+          bodyRead = true;
+          return {};
+        },
+      }),
+    });
+    await expect(client.getManifest()).rejects.toMatchObject({ code: ApiError.INTEGRITY });
+    expect(bodyRead).toBe(false);
+  });
+
+  it('rejects an oversized manifest body with INTEGRITY', async () => {
+    // A single valid entry with a very long title keeps the test tiny while
+    // pushing the serialized body past the configured cap.
+    const hugeTitleEntry = { ...validEntry, title: 'x'.repeat(5000) };
+    const client = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      manifestMaxBytes: 1024,
+      fetchImpl: async () => jsonResponse({ ...validManifest, entries: [hugeTitleEntry] }),
+    });
+    await expect(client.getManifest()).rejects.toMatchObject({ code: ApiError.INTEGRITY });
+  });
+
+  it('accepts a valid manifest under a small manifest cap (cap does not break parsing)', async () => {
+    const client = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      manifestMaxBytes: 4096,
+      fetchImpl: async () => jsonResponse(validManifest),
+    });
+    await expect(client.getManifest()).resolves.toEqual(validManifest);
+  });
+
+  it('parses without a content-length header when the actual body fits the cap', async () => {
+    const client = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      manifestMaxBytes: 4096,
+      fetchImpl: async () =>
+        new Response(JSON.stringify(validManifest), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    });
+    await expect(client.getManifest()).resolves.toEqual(validManifest);
   });
 
   it('accepts valid document and artifact entries across the whole allowlist', async () => {
@@ -455,6 +519,23 @@ describe('getManifest()', () => {
     await expect(client.getManifest()).rejects.toMatchObject({ code: ApiError.SERVER });
   });
 
+  it('maps other 4xx statuses (not 401/404/429) to REQUEST', async () => {
+    for (const status of [400, 403, 418, 422]) {
+      const client = createApiClient({
+        baseUrl: BASE,
+        token: FAKE_TOKEN,
+        fetchImpl: async () => ({
+          status,
+          ok: false,
+          headers: { get: () => null },
+        }),
+      });
+      await expect(client.getManifest(), `status=${status}`).rejects.toMatchObject({
+        code: ApiError.REQUEST,
+      });
+    }
+  });
+
   it('parses a safe integer Retry-After but ignores non-integer values', async () => {
     let retryAfter = '30';
     let client = createApiClient({
@@ -694,6 +775,62 @@ describe('getDocument()', () => {
       }),
     });
     await expect(client.getDocument('doc-1')).rejects.toMatchObject({ code: ApiError.SCHEMA });
+  });
+});
+
+describe('createApiClient() construction validation', () => {
+  it('throws TypeError when baseUrl is missing, not a string, or invalid', () => {
+    const invalidInputs = [
+      undefined,
+      null,
+      42,
+      '',
+      '   ',
+      'not-a-url',
+      'ftp://example.com',
+      'https://example.com/kb?tree=1',
+    ];
+    for (const baseUrl of invalidInputs) {
+      expect(
+        () => createApiClient({ baseUrl, token: FAKE_TOKEN }),
+        `baseUrl=${JSON.stringify(baseUrl)}`,
+      ).toThrow(TypeError);
+    }
+  });
+
+  it('throws TypeError when token is missing or has an invalid shape', () => {
+    expect(() => createApiClient({ baseUrl: BASE, token: undefined })).toThrow(TypeError);
+    expect(() => createApiClient({ baseUrl: BASE, token: null })).toThrow(TypeError);
+    expect(() => createApiClient({ baseUrl: BASE, token: 42 })).toThrow(TypeError);
+    expect(() => createApiClient({ baseUrl: BASE, token: 'not-a-token' })).toThrow(TypeError);
+    expect(() => createApiClient({ baseUrl: BASE, token: 'tok_' + 'a'.repeat(43) })).toThrow(
+      TypeError,
+    );
+  });
+
+  it('throws early without constructing a working client (validation runs at factory time)', () => {
+    const client = createApiClient({ baseUrl: BASE, token: FAKE_TOKEN });
+    expect(client).toBeDefined();
+    expect(() => createApiClient({ baseUrl: BASE })).toThrow(TypeError);
+    expect(() => createApiClient({ token: FAKE_TOKEN })).toThrow(TypeError);
+  });
+
+  it('never echoes the candidate token in construction errors', () => {
+    const evil = 'tok_' + 'a'.repeat(42) + '+';
+    let message = '';
+    try {
+      createApiClient({ baseUrl: BASE, token: evil });
+    } catch (err) {
+      message = err.message;
+    }
+    expect(message).not.toContain(evil);
+    expect(message).not.toContain('tok_');
+    expect(message.toLowerCase()).toContain('token');
+  });
+
+  it('normalizes the base URL via the shared connection-store rule (trailing slashes stripped)', () => {
+    const client = createApiClient({ baseUrl: 'https://api.example.com/kb///', token: FAKE_TOKEN });
+    expect(client.artifactUrl('a')).toBe('https://api.example.com/kb/v1/artifacts/a');
   });
 });
 

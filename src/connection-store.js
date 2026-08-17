@@ -99,6 +99,14 @@ export function createConnectionStore(adapter) {
       // Best-effort cleanup on a failed save so no readable configured or
       // secret state remains. The secret key is removed first; cleanup
       // failures are swallowed and the adapter exception never surfaces.
+      //
+      // Both keys — not only the values written this call — are removed. A
+      // transient keystore error means the adapter may have partially
+      // persisted either write, so the store cannot trust that previously
+      // saved valid settings are still intact. Removing them too is the
+      // fail-closed choice: previously saved credentials are deliberately
+      // destroyed (the user simply re-enters them) rather than risk a later
+      // load pairing a stale credential with an absent/mismatched one.
       try {
         await adapter.remove(DEVICE_TOKEN_KEY);
       } catch {
