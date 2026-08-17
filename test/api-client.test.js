@@ -256,6 +256,17 @@ describe('getManifest()', () => {
     }
   });
 
+  it('rejects uppercase allowlist prefixes (mirrors the server startsWith semantics)', async () => {
+    // The server matches the `wiki/` / `outputs/` prefix case-sensitively;
+    // the client must reject entries a real server could never emit.
+    for (const relativePath of ['WIKI/a.md', 'Outputs/report.md', 'WIKI/sub/a.md']) {
+      const client = clientWith({ ...validManifest, entries: [{ ...validEntry, relativePath }] });
+      await expect(client.getManifest(), `entry=${relativePath}`).rejects.toMatchObject({
+        code: ApiError.SCHEMA,
+      });
+    }
+  });
+
   it('accepts valid ISO datetime mtimes with Z or an explicit offset', async () => {
     for (const mtime of ['2026-08-17T08:30:00+08:00', '2024-01-01T00:00:00Z', '2026-08-17T23:59:59.999Z']) {
       const client = clientWith({ ...validManifest, entries: [{ ...validEntry, mtime }] });

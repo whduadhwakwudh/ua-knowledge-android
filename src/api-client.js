@@ -96,8 +96,20 @@ function daysInMonth(year, month) {
   return new Date(Date.UTC(safeYear, month, 0)).getUTCDate();
 }
 
-/** Server allowlist: wiki/**\/*.md, outputs/**\/*.md, outputs/**\/*.apk (extensions match case-insensitively). */
+/**
+ * Server allowlist mirror (manifest.ts RULES): the path prefix `wiki/` or
+ * `outputs/` must match case-sensitively (the server uses startsWith on the
+ * exact prefix), while the file extension matches case-insensitively (the
+ * server lowercases the extension). This mirrors the server exactly, so a
+ * hostile server emitting `WIKI/x.md` is rejected here just as the real
+ * server would never emit it.
+ */
 const ALLOWLISTED_PATH_PATTERNS = [/^wiki\/.+\.md$/i, /^outputs\/.+\.md$/i, /^outputs\/.+\.apk$/i];
+
+function isAllowlistedPath(p) {
+  if (!/^(wiki|outputs)\//.test(p)) return false;
+  return ALLOWLISTED_PATH_PATTERNS.some((re) => re.test(p));
+}
 
 const KIND_FOR_EXTENSION = { md: 'document', apk: 'artifact' };
 const MIME_FOR_KIND = {
@@ -127,8 +139,9 @@ function isValidIsoDatetime(value) {
 /**
  * Validates a normalized manifest relativePath: no empty/dot/hidden/_tmp/
  * node_modules segments (the latter two case-insensitively), no leading
- * slash/backslash, and an exact match of the server allowlist. The original
- * path casing is preserved; only the extension match is case-insensitive.
+ * slash/backslash, and an exact mirror of the server allowlist — the `wiki/`
+ * / `outputs/` prefix is case-sensitive, the extension is not. The original
+ * path casing is preserved.
  */
 function isValidRelativePath(p) {
   if (typeof p !== 'string' || p === '') return false;
@@ -140,7 +153,7 @@ function isValidRelativePath(p) {
     const lower = segment.toLowerCase();
     if (lower.startsWith('_tmp') || lower === 'node_modules') return false;
   }
-  return ALLOWLISTED_PATH_PATTERNS.some((re) => re.test(p));
+  return isAllowlistedPath(p);
 }
 
 /** Expected kind derived from the relativePath extension, or null. */
