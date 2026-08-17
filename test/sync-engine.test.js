@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll } from 'vitest';
 import 'fake-indexeddb/auto';
 import { createSyncEngine } from '../src/sync-engine.js';
 import { openKnowledgeDb, DB_NAME } from '../src/cache-db.js';
@@ -107,12 +107,22 @@ function createFakeApi({
   return api;
 }
 
-function deleteDatabase(name) {
+function deleteDatabase(name, attempts = 0) {
   return new Promise((resolve, reject) => {
     const request = indexedDB.deleteDatabase(name);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error('database deletion blocked'));
+    request.onblocked = () => {
+      // Another connection is still closing (async). Give it a moment and
+      // retry; fake-indexeddb resolves close() lazily.
+      if (attempts >= 20) {
+        reject(new Error('database deletion blocked after retries'));
+        return;
+      }
+      setTimeout(() => {
+        deleteDatabase(name, attempts + 1).then(resolve, reject);
+      }, 10);
+    };
   });
 }
 
@@ -399,5 +409,95 @@ describe('phase events', () => {
     await engine(api).sync({ onPhase: (phase) => events.push(phase) });
     expect(events.map((e) => e.phase)).toEqual(['manifest', 'complete']);
     expect(events[1]).toMatchObject({ phase: 'complete', revision: REV_1, added: 0, removed: 0, unchanged: 1 });
+  });
+});
+
+describe('single-flight sync (concurrent calls share one run)', () => {
+  const SF_DB = 'ua-knowledge-singleflight-test';
+  let sfDb;
+
+  beforeEach(async () => {
+    await deleteDatabase(SF_DB);
+    sfDb = await openKnowledgeDb(SF_DB);
+  });
+
+  afterEach(async () => {
+    if (sfDb) {
+      sfDb.db.close();
+      sfDb = null;
+    }
+    await deleteDatabase(SF_DB);
+  });
+
+  function sfEngine(api) {
+    return createSyncEngine({ api, db: sfDb });
+  }
+
+  it('two overlapping sync() calls perform one manifest fetch, one download set and one event stream', async () => {
+    const a = await docEntry('wiki/a.md', '# A body');
+    const b = await docEntry('wiki/b.md', '# B body');
+    const manifest = makeManifest(REV_1, [a, b]);
+    let resolveManifest;
+    const gate = new Promise((resolve) => {
+      resolveManifest = resolve;
+    });
+    const api = createFakeApi({
+      manifest,
+      documents: new Map([
+        [a.id, { text: '# A body' }],
+        [b.id, { text: '# B body' }],
+      ]),
+      manifestImpl: async () => {
+        await gate; // hold the first call until both sync() calls have fired
+        return manifest;
+      },
+    });
+
+    const firstEvents = [];
+    const secondEvents = [];
+    const sharedEngine = sfEngine(api); // one instance → one in-flight lock
+    const first = sharedEngine.sync({ onPhase: (e) => firstEvents.push(e) });
+    const second = sharedEngine.sync({ onPhase: (e) => secondEvents.push(e) });
+
+    // The first call is running (one manifest fetch, gated); the second call
+    // must share the in-flight run — no second fetch, no second event stream.
+    expect(api.calls.manifest).toBe(1);
+    resolveManifest();
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult).toEqual({ added: 2, updated: 0, removed: 0, unchanged: 0, revision: REV_1 });
+    expect(secondResult).toEqual(firstResult);
+
+    // Exactly one manifest fetch and exactly one download set overall.
+    expect(api.calls.manifest).toBe(1);
+    expect(api.calls.documents).toHaveLength(2);
+
+    // Only the FIRST caller's onPhase ran (the shared run reports to it);
+    // the second caller receives the same settled result but no duplicate
+    // event stream.
+    expect(firstEvents.map((e) => e.phase)).toEqual(['manifest', 'download', 'verify', 'commit', 'complete']);
+    expect(secondEvents).toEqual([]);
+
+    // Active revision is committed exactly once and ordered.
+    const active = await sfDb.getActiveRevision();
+    expect(active).toBe(REV_1);
+  });
+
+  it('a new sync() after the first settles starts a fresh run', async () => {
+    const a = await docEntry('wiki/a.md', '# A body');
+    const manifest = makeManifest(REV_1, [a]);
+    const api = createFakeApi({
+      manifest,
+      documents: new Map([[a.id, { text: '# A body' }]]),
+    });
+
+    const first = await sfEngine(api).sync();
+    expect(first.revision).toBe(REV_1);
+    expect(api.calls.manifest).toBe(1);
+
+    // Second sync sees no changes.
+    const second = await sfEngine(api).sync();
+    expect(second).toEqual({ added: 0, updated: 0, removed: 0, unchanged: 1, revision: REV_1 });
+    expect(api.calls.manifest).toBe(2);
   });
 });

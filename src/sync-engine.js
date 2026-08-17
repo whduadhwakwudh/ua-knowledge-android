@@ -31,7 +31,28 @@ async function sha256Hex(text) {
 }
 
 export function createSyncEngine({ api, db }) {
+  // Single-flight guard: overlapping sync() calls share one in-flight
+  // promise. Without it two concurrent runs could commit out of order,
+  // inverting the previous/active rollback window, transiently rolling the
+  // active snapshot backward, duplicating downloads and interleaving phase
+  // events. A caller that arrives while a sync is running receives the SAME
+  // promise (its onPhase callback is ignored for the shared run); a new sync
+  // after the first settles starts fresh.
+  let inFlight = null;
+
   async function sync({ onPhase } = {}) {
+    if (inFlight !== null) {
+      return inFlight;
+    }
+    inFlight = runSync(onPhase);
+    try {
+      return await inFlight;
+    } finally {
+      inFlight = null;
+    }
+  }
+
+  async function runSync(onPhase) {
     const report = (event) => {
       if (typeof onPhase === 'function') onPhase(event);
       return event;
@@ -99,7 +120,9 @@ export function createSyncEngine({ api, db }) {
 
     // ---- phase: commit ----------------------------------------------------
     report({ phase: 'commit', revision });
-    await db.stageManifest({ revision, manifest, contents });
+    // One atomic write: manifest + contents + meta.activeRevision in a single
+    // transaction. There is no staged state to resume from — an interrupted
+    // sync simply re-fetches the manifest and changed documents next time.
     await db.commitRevision({ revision, manifest, contents });
     await db.gcUnreferenced();
 

@@ -59,6 +59,21 @@ export async function openKnowledgeDb() {
    * current + previous rollback window.
    */
   async function commitRevision({ revision, manifest, contents }) {
+    // Internal invariant (content-addressing is self-enforcing): every
+    // content blob passed in must be referenced by the manifest being
+    // committed — a hash that matches no document entry is an orphan write
+    // and rejected. The reverse is NOT required: document bodies may already
+    // be cached from an earlier revision (content-addressed reuse), so a
+    // commit may carry only the newly added/changed contents.
+    const documentHashes = new Set(
+      (manifest.entries ?? []).filter((e) => e.kind === 'document').map((e) => e.sha256),
+    );
+    for (const { sha256 } of contents) {
+      if (typeof sha256 !== 'string' || !documentHashes.has(sha256)) {
+        throw new TypeError('commitRevision: content key must match a manifest document entry');
+      }
+    }
+
     const tx = db.transaction(['meta', 'manifests', 'contents'], 'readwrite');
     const metaStore = tx.objectStore('meta');
     const manifestsStore = tx.objectStore('manifests');
@@ -89,9 +104,11 @@ export async function openKnowledgeDb() {
   }
 
   /**
-   * Writes manifest + contents WITHOUT touching meta.activeRevision. Used by
-   * the sync engine to persist a fully downloaded revision before the final
-   * atomic commit, so an interrupted sync can resume without data loss.
+   * Writes manifest + contents WITHOUT touching meta.activeRevision. This is
+   * an optional building block; the sync engine currently commits atomically
+   * via commitRevision and does NOT resume from staged state (an interrupted
+   * sync re-fetches the manifest and changed documents next run). Kept for
+   * callers that want a two-phase write.
    */
   async function stageManifest({ revision, manifest, contents }) {
     const tx = db.transaction(['manifests', 'contents'], 'readwrite');
