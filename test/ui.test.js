@@ -76,7 +76,7 @@ function baseState(overrides = {}) {
 function mountDOM(wiringOverrides = {}) {
   const dom = new JSDOM(INDEX_HTML, { url: 'https://local.test/' });
   const container = dom.window.document.querySelector('#screen');
-  const calls = { sync: 0, open: [], fav: [], conn: [], query: [], dl: [], close: [], tab: [] };
+  const calls = { sync: 0, open: [], fav: [], conn: [], query: [], dl: [], close: [], tab: [], cat: [], shuffle: 0 };
   const wiring = {
     onSync: () => {
       calls.sync += 1;
@@ -101,6 +101,12 @@ function mountDOM(wiringOverrides = {}) {
     },
     onSelectTab: (t) => {
       calls.tab.push(t);
+    },
+    onSelectCategory: (c) => {
+      calls.cat.push(c);
+    },
+    onShuffle: () => {
+      calls.shuffle += 1;
     },
     ...wiringOverrides,
   };
@@ -295,6 +301,122 @@ describe('mountApp — search', () => {
   });
 });
 
+describe('mountApp — categories and shuffle', () => {
+  it('renders category chips (全部 + dirs) and highlights the active one', () => {
+    const { container, ui } = mountDOM();
+    ui.update(
+      baseState({
+        documents: [
+          docFixture('d1'),
+          docFixture('d2', { label: 'outputs', relativePath: 'outputs/x.md' }),
+        ],
+        categories: ['wiki', 'outputs'],
+        category: 'wiki',
+      }),
+    );
+    expect(isHidden($id(container, 'category-chips'))).toBe(false);
+    const chips = Array.from(container.querySelectorAll('#category-chips [data-category]'));
+    expect(chips.map((c) => c.dataset.category)).toEqual(['all', 'wiki', 'outputs']);
+    expect(container.querySelector('#category-chips [data-category="wiki"]').classList.contains('chip-on')).toBe(true);
+    expect(container.querySelector('#category-chips [data-category="all"]').getAttribute('aria-pressed')).toBe('false');
+    expect(container.querySelector('#category-chips [data-category="wiki"]').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('clicking a category chip fires onSelectCategory', () => {
+    const { container, ui, calls } = mountDOM();
+    ui.update(baseState({ documents: [docFixture('d1')], categories: ['wiki'], category: 'all' }));
+    container.querySelector('#category-chips [data-category="wiki"]').click();
+    expect(calls.cat).toEqual(['wiki']);
+  });
+
+  it('hides category chips while searching (search is global)', () => {
+    const { container, ui } = mountDOM();
+    ui.update(baseState({ query: '知识', documents: [docFixture('d1')], categories: ['wiki'] }));
+    expect(isHidden($id(container, 'category-chips'))).toBe(true);
+  });
+
+  it('shuffle button fires onShuffle in reading mode and is hidden while searching', () => {
+    const { container, ui, calls } = mountDOM();
+    ui.update(baseState({ documents: [docFixture('d1')], categories: ['wiki'] }));
+    expect(isHidden($id(container, 'btn-shuffle'))).toBe(false);
+    $id(container, 'btn-shuffle').click();
+    expect(calls.shuffle).toBe(1);
+    ui.update(baseState({ query: '知识', documents: [], categories: ['wiki'] }));
+    expect(isHidden($id(container, 'btn-shuffle'))).toBe(true);
+  });
+
+  it('hides the category row entirely when there is only one category', () => {
+    const { container, ui } = mountDOM();
+    ui.update(baseState({ documents: [docFixture('d1')], categories: ['wiki'], category: 'wiki' }));
+    expect(isHidden($id(container, 'category-chips'))).toBe(false);
+    ui.update(baseState({ documents: [docFixture('d1')], categories: [], category: 'all' }));
+    expect(isHidden($id(container, 'category-chips'))).toBe(true);
+  });
+});
+
+describe('mountApp — Obsidian sidebar', () => {
+  it('the hamburger button opens the left sidebar and the scrim closes it', () => {
+    const { container, ui } = mountDOM();
+    ui.update(baseState({ documents: [docFixture('d1')] }));
+    expect(ui.isSidebarOpen()).toBe(false);
+    $id(container, 'btn-menu').click();
+    expect(ui.isSidebarOpen()).toBe(true);
+    expect($id(container, 'sidebar-layer').getAttribute('aria-hidden')).toBe('false');
+    $id(container, 'sidebar-scrim').click();
+    expect(ui.isSidebarOpen()).toBe(false);
+  });
+
+  it('renders the category tree with counts and highlights the active one', () => {
+    const { container, ui } = mountDOM();
+    ui.update(
+      baseState({
+        documents: [docFixture('d1')],
+        allDocuments: [docFixture('d1'), docFixture('d2', { label: 'outputs', relativePath: 'outputs/x.md' })],
+        categories: ['wiki', 'outputs'],
+        category: 'wiki',
+      }),
+    );
+    $id(container, 'btn-menu').click();
+    const rows = Array.from(container.querySelectorAll('#sidebar-cats [data-category]'));
+    expect(rows.map((r) => r.dataset.category)).toEqual(['all', 'wiki', 'outputs']);
+    expect(container.querySelector('#sidebar-cats [data-category="all"] .cat-count').textContent).toBe('2');
+    expect(container.querySelector('#sidebar-cats [data-category="wiki"] .cat-count').textContent).toBe('1');
+    expect(container.querySelector('#sidebar-cats [data-category="wiki"]').classList.contains('active')).toBe(true);
+  });
+
+  it('picking a category from the sidebar fires onSelectCategory and closes the drawer', () => {
+    const { container, ui, calls } = mountDOM();
+    ui.update(baseState({ documents: [docFixture('d1')], categories: ['wiki'], category: 'all' }));
+    $id(container, 'btn-menu').click();
+    container.querySelector('#sidebar-cats [data-category="wiki"]').click();
+    expect(calls.cat).toEqual(['wiki']);
+    expect(ui.isSidebarOpen()).toBe(false);
+  });
+
+  it('sidebar sync action fires onSync; connection action opens the sheet', () => {
+    const { container, ui, calls } = mountDOM();
+    ui.update(baseState({ documents: [docFixture('d1')] }));
+    $id(container, 'btn-menu').click();
+    $id(container, 'sidebar-sync').click();
+    expect(calls.sync).toBe(1);
+    expect(ui.isSidebarOpen()).toBe(false);
+
+    $id(container, 'btn-menu').click();
+    $id(container, 'sidebar-conn-open').click();
+    expect($id(container, 'sheet-connection').classList.contains('open')).toBe(true);
+    expect(ui.isSidebarOpen()).toBe(false);
+  });
+
+  it('Escape closes the sidebar before sheets', () => {
+    const { container, ui } = mountDOM();
+    ui.update(baseState());
+    $id(container, 'btn-menu').click();
+    const esc = new container.ownerDocument.defaultView.KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
+    container.dispatchEvent(esc);
+    expect(ui.isSidebarOpen()).toBe(false);
+  });
+});
+
 describe('mountApp — documents and favorites', () => {
   it('opening a note card invokes onOpenDocument', () => {
     const { container, ui, calls } = mountDOM();
@@ -339,6 +461,26 @@ describe('mountApp — documents and favorites', () => {
 
     container.querySelector('[data-toggle-fav="d1"]').click();
     expect(calls.fav).toEqual(['d1']);
+  });
+
+  it('favorites come from the full document set, not the home category filter', () => {
+    const { container, ui } = mountDOM();
+    ui.update(
+      baseState({
+        // 首页当前只看 wiki（d1）；收藏的是 outputs 里的 d2
+        documents: [docFixture('d1')],
+        allDocuments: [
+          docFixture('d1'),
+          docFixture('d2', { label: 'outputs', relativePath: 'outputs/y.md' }),
+        ],
+        categories: ['wiki', 'outputs'],
+        category: 'wiki',
+        favorites: ['d2'],
+      }),
+    );
+    container.querySelector('[data-tab="favs"]').click();
+    expect($id(container, 'fav-count').textContent).toContain('1 篇');
+    expect(container.querySelector('[data-toggle-fav="d2"]')).toBeTruthy();
   });
 
   it('empty favorites show the empty card', () => {

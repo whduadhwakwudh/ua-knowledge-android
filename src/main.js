@@ -56,7 +56,28 @@ function blankRuntimeState() {
     syncError: null,
     favorites: [],
     detail: null,
+    // 分类浏览：category 为当前选中分类（'all' 或顶层目录名），categories
+    // 是有文档的顶层目录（wiki/outputs/…），allDocuments 是未过滤未洗牌的
+    // 全量列表（收藏页、统计页依赖它，不受当前分类影响）。
+    category: 'all',
+    categories: [],
+    allDocuments: [],
   };
+}
+
+/**
+ * Fisher–Yates 洗牌，返回新数组，不改动输入。
+ * rng 可注入（测试用），默认 Math.random。
+ */
+function shuffleArray(list, rng = Math.random) {
+  const arr = list.slice();
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+  return arr;
 }
 
 function excerptOf(text) {
@@ -119,7 +140,10 @@ export async function bootstrapApp(options = {}) {
     dbImpl,
     fetchImpl,
     apiTimeoutMs,
+    randomImpl,
   } = options;
+  // 随机排序的随机源；测试可注入固定序列，生产用 Math.random。
+  const rng = typeof randomImpl === 'function' ? randomImpl : Math.random;
   const connectionStore = connectionStoreImpl ?? (await createProductionConnectionStore({ isNative }));
   const db = dbImpl ?? (await openKnowledgeDb());
   const favoritesStore = createFavoritesStore(db);
@@ -148,6 +172,16 @@ export async function bootstrapApp(options = {}) {
   let artifactById = new Map();
 
   /* ─── content loading ───────────────────────────────────── */
+  /** 当前应展示的文档列表：搜索态按相关度，浏览态按分类过滤 + 随机洗牌。 */
+  function visibleDocuments() {
+    if (state.query.trim()) return applySearch(state.query);
+    const base =
+      state.category === 'all'
+        ? allDocuments
+        : allDocuments.filter((d) => d.label === state.category);
+    return shuffleArray(base, rng);
+  }
+
   async function refreshCachedContent() {
     state.activeRevision = await db.getActiveRevision();
     const manifest = await db.getActiveManifest();
@@ -189,12 +223,35 @@ export async function bootstrapApp(options = {}) {
     allArtifacts = arts;
     docById = nextDocById;
     artifactById = nextArtifactById;
+
+    // 分类：有文档的顶层目录，wiki/outputs 优先，其余按名称排序。
+    const categories = [];
+    for (const d of docs) {
+      if (!categories.includes(d.label)) categories.push(d.label);
+    }
+    const preferred = ['wiki', 'outputs'];
+    categories.sort((a, b) => {
+      const ia = preferred.indexOf(a);
+      const ib = preferred.indexOf(b);
+      if (ia !== -1 || ib !== -1) {
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
+      }
+      return a.localeCompare(b);
+    });
+    state.categories = categories;
+    if (state.category !== 'all' && !categories.includes(state.category)) {
+      state.category = 'all';
+    }
+
     const favoriteRecords = await favoritesStore.list();
     state.favorites = favoriteRecords.map((f) => f.documentId);
     search = buildSearchIndex(
       docs.map((d) => ({ id: d.id, title: d.title, body: d.text ?? '', relativePath: d.relativePath })),
     );
-    state.documents = state.query.trim() ? applySearch(state.query) : docs;
+    state.allDocuments = docs;
+    state.documents = visibleDocuments();
     state.artifacts = arts;
   }
 
@@ -352,6 +409,9 @@ export async function bootstrapApp(options = {}) {
     state.artifacts = [];
     state.favorites = [];
     state.detail = null;
+    state.category = 'all';
+    state.categories = [];
+    state.allDocuments = [];
     allDocuments = [];
     allArtifacts = [];
     docById = new Map();
@@ -421,7 +481,17 @@ export async function bootstrapApp(options = {}) {
     },
     onQueryChange: (query) => {
       state.query = query;
-      state.documents = query.trim() ? applySearch(query) : allDocuments;
+      state.documents = visibleDocuments();
+      ui.update(state);
+    },
+    onSelectCategory: (category) => {
+      state.category = category;
+      state.documents = visibleDocuments();
+      ui.update(state);
+    },
+    onShuffle: () => {
+      // 阅读模式：重新洗牌当前分类的列表，换一批内容。
+      state.documents = visibleDocuments();
       ui.update(state);
     },
     onConnectionChange: (payload) => {
@@ -457,6 +527,11 @@ export async function bootstrapApp(options = {}) {
   if (typeof Capacitor !== 'undefined' && Capacitor.getPlatform?.() !== 'web') {
     const { App } = await import('@capacitor/app');
     App.addListener('backButton', () => {
+      if (ui.isSidebarOpen()) {
+        // Close the left sidebar drawer first.
+        ui.closeSidebar();
+        return;
+      }
       if (ui.isSheetOpen()) {
         // Close the open sheet first; keep the app foregrounded.
         ui.closeSheets();

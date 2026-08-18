@@ -210,15 +210,18 @@ export function mountApp(container, wiring = {}) {
       '" role="button" tabindex="0" aria-label="打开笔记：' +
       esc(d.title) +
       '">' +
+      '<svg class="note-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4"/></svg>' +
+      '<div class="note-body">' +
       '<h3 class="note-title">' +
       esc(d.title) +
       '</h3>' +
       '<p class="note-excerpt">' +
       esc(d.excerpt ?? '') +
       '</p>' +
-      '<div class="note-foot"><div class="chips"><span class="chip chip-mono">' +
+      '</div>' +
+      '<div class="note-right"><span class="note-label">' +
       esc(d.label ?? '') +
-      '</span></div><span class="note-time">' +
+      '</span><span class="note-time">' +
       esc(d.updated ?? '') +
       '</span></div>' +
       '</article>'
@@ -275,11 +278,110 @@ export function mountApp(container, wiring = {}) {
     );
   }
 
+  /* ─── sidebar（Obsidian 风格左侧文件树抽屉） ─────────────── */
+  function renderSidebar(state) {
+    const cats = state.categories ?? [];
+    const allDocs = state.allDocuments ?? state.documents ?? [];
+    const current = state.category ?? 'all';
+    const counts = new Map();
+    for (const d of allDocs) counts.set(d.label, (counts.get(d.label) ?? 0) + 1);
+    const nav = $('#sidebar-cats');
+    if (nav) {
+      const items = [{ value: 'all', label: '全部笔记', count: allDocs.length }].concat(
+        cats.map((c) => ({ value: c, label: c, count: counts.get(c) ?? 0 })),
+      );
+      nav.innerHTML = items
+        .map((item) => {
+          const icon =
+            item.value === 'all'
+              ? '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'
+              : '<path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4"/>';
+          return (
+            '<button class="sidebar-cat' +
+            (current === item.value ? ' active' : '') +
+            '" data-category="' +
+            esc(item.value) +
+            '" aria-pressed="' +
+            (current === item.value ? 'true' : 'false') +
+            '">' +
+            '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+            icon +
+            '</svg>' +
+            '<span class="cat-name">' +
+            esc(item.label) +
+            '</span>' +
+            '<span class="cat-count">' +
+            item.count +
+            '</span>' +
+            '</button>'
+          );
+        })
+        .join('');
+    }
+    if ($('#sidebar-conn')) {
+      $('#sidebar-conn').textContent =
+        state.connection === 'unconfigured' ? '未连接' : (state.baseUrl ?? '已连接');
+    }
+  }
+
+  function openSidebar() {
+    const layer = $('#sidebar-layer');
+    if (!layer) return;
+    layer.classList.add('open');
+    layer.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeSidebar() {
+    const layer = $('#sidebar-layer');
+    if (!layer) return;
+    layer.classList.remove('open');
+    layer.setAttribute('aria-hidden', 'true');
+  }
+
+  /** True when the left sidebar drawer is open (Android back handling). */
+  function isSidebarOpen() {
+    const layer = $('#sidebar-layer');
+    return !!layer && layer.classList.contains('open');
+  }
+
   /* ─── rendering: home ───────────────────────────────────── */
+  /** 分类筛选条：全部 + 各顶层目录。搜索态隐藏（搜索是全局的）。 */
+  function renderCategoryChips(state) {
+    const categories = state.categories ?? [];
+    const searching = (state.query ?? '').trim() !== '';
+    const chipRow = $('#category-chips');
+    if (!chipRow) return;
+    if (searching || categories.length === 0) {
+      chipRow.classList.add(HIDDEN);
+      chipRow.innerHTML = '';
+      return;
+    }
+    const current = state.category ?? 'all';
+    const items = [{ value: 'all', label: '全部' }].concat(
+      categories.map((c) => ({ value: c, label: c })),
+    );
+    chipRow.innerHTML = items
+      .map(
+        (item) =>
+          '<button class="chip' +
+          (current === item.value ? ' chip-on' : '') +
+          '" data-category="' +
+          esc(item.value) +
+          '" aria-pressed="' +
+          (current === item.value ? 'true' : 'false') +
+          '">' +
+          esc(item.label) +
+          '</button>',
+      )
+      .join('');
+    chipRow.classList.remove(HIDDEN);
+  }
+
   function renderHome(state) {
     const query = (state.query ?? '').trim();
     const documents = state.documents ?? [];
     const noDocs = documents.length === 0;
+    const searching = query !== '';
 
     if ($('#home-greeting')) {
       const g = todayGreeting();
@@ -292,9 +394,12 @@ export function mountApp(container, wiring = {}) {
     toggleHidden($('#sync-card'), showPrompt);
     toggleHidden($('#auth-error-wrap'), state.connection !== 'auth-error');
 
+    renderCategoryChips(state);
+    // 「换一批」只在阅读态显示；搜索态结果按相关度排列，不随机。
+    toggleHidden($('#btn-shuffle'), searching);
+
     if ($('#recent-count')) $('#recent-count').textContent = documents.length + ' 篇';
 
-    const searching = query !== '';
     toggleHidden($('#search-head'), !searching);
     if ($('#sh-count')) $('#sh-count').textContent = documents.length + ' 篇';
 
@@ -374,7 +479,9 @@ export function mountApp(container, wiring = {}) {
   /* ─── rendering: favorites ──────────────────────────────── */
   function renderFavs(state) {
     const favorites = state.favorites ?? [];
-    const favDocs = (state.documents ?? []).filter((d) => favorites.includes(d.id));
+    // 收藏页不受首页分类筛选影响：基于全量文档。
+    const allDocs = state.allDocuments ?? state.documents ?? [];
+    const favDocs = allDocs.filter((d) => favorites.includes(d.id));
     if ($('#fav-count')) $('#fav-count').textContent = favDocs.length + ' 篇';
     const groups = $('#fav-groups');
     if (groups) groups.innerHTML = favDocs.length
@@ -387,7 +494,8 @@ export function mountApp(container, wiring = {}) {
 
   /* ─── rendering: me ─────────────────────────────────────── */
   function renderMe(state) {
-    const documents = state.documents ?? [];
+    // 统计基于全量文档，不受首页当前分类影响。
+    const documents = state.allDocuments ?? state.documents ?? [];
     const dirs = new Set();
     for (const d of documents) {
       const slash = d.relativePath ? d.relativePath.indexOf('/') : -1;
@@ -470,6 +578,7 @@ export function mountApp(container, wiring = {}) {
     renderFavs(state);
     renderMe(state);
     renderDetail(state);
+    renderSidebar(state);
     applyTab(state.tab ?? 'home');
   }
 
@@ -498,6 +607,20 @@ export function mountApp(container, wiring = {}) {
   $('#btn-recent-sync')?.addEventListener('click', () => wiring.onSync?.());
   $('#setting-sync')?.addEventListener('click', () => wiring.onSync?.());
   $('#btn-auth-retry')?.addEventListener('click', () => wiring.onSync?.());
+  $('#btn-shuffle')?.addEventListener('click', () => wiring.onShuffle?.());
+
+  /* ─── sidebar ───────────────────────────────────────────── */
+  $('#btn-menu')?.addEventListener('click', openSidebar);
+  $('#sidebar-scrim')?.addEventListener('click', closeSidebar);
+  $('#sidebar-sync')?.addEventListener('click', () => {
+    closeSidebar();
+    wiring.onSync?.();
+  });
+  $('#sidebar-conn-open')?.addEventListener('click', () => {
+    closeSidebar();
+    openConnectionSheet();
+    wiring.onConnectionChange?.({ action: 'open' });
+  });
 
   $('#btn-open-connection')?.addEventListener('click', () => {
     openConnectionSheet();
@@ -548,6 +671,12 @@ export function mountApp(container, wiring = {}) {
   $('#scrim')?.addEventListener('click', closeSheets);
 
   container.addEventListener('click', (e) => {
+    const category = e.target.closest('[data-category]');
+    if (category) {
+      closeSidebar();
+      wiring.onSelectCategory?.(category.dataset.category);
+      return;
+    }
     const download = e.target.closest('[data-download-id]');
     if (download) {
       wiring.onDownloadArtifact?.(download.dataset.downloadId);
@@ -567,7 +696,8 @@ export function mountApp(container, wiring = {}) {
 
   container.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if ($('#sheet-layer')?.classList.contains('open')) closeSheets();
+      if (isSidebarOpen()) closeSidebar();
+      else if ($('#sheet-layer')?.classList.contains('open')) closeSheets();
       else if (screen.classList.contains('detail-open')) closeDetail();
       return;
     }
@@ -593,6 +723,9 @@ export function mountApp(container, wiring = {}) {
     openConnectionSheet,
     closeSheets,
     isSheetOpen,
+    openSidebar,
+    closeSidebar,
+    isSidebarOpen,
     setConnectionBusy,
     setConnectionStatus,
     showConnectionErrors,

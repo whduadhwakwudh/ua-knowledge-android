@@ -27,18 +27,21 @@
   <link rel="icon" href="data:," />
   <style>
     :root {
-      --bg:          oklch(96.26% 0.007 286.3);   /* iOS systemGroupedBackground */
-      --surface:     oklch(100% 0 0);
-      --fg:          oklch(0% 0 0);
-      --muted:       oklch(53.26% 0.006 286.2);    /* 白底 5.23:1 */
-      --border:      oklch(88.4% 0.008 286.2);
-      --accent:      oklch(60.28% 0.218 257.4);    /* 系统蓝 #007AFF */
-      --accent-text: color-mix(in oklch, var(--accent) 76%, black); /* 链接文字 ≥4.5:1 */
-      --accent-soft: color-mix(in oklch, var(--accent) 14%, transparent);
-      --fg-soft:     color-mix(in oklch, var(--fg) 6%, transparent);
-      --field:       oklch(93.55% 0.007 286.3);    /* 搜索框填充 */
-      --placeholder: oklch(48.36% 0.008 286.1);    /* 字段底 5.33:1 */
-      --scrim:       oklch(18% 0.02 286 / 34%);
+      /* Obsidian 风格主题：紫色 accent、近白画布、紧凑信息密度 */
+      --bg:          oklch(98.2% 0.002 292);   /* 画布 */
+      --surface:     oklch(100% 0 0);          /* 卡片/面板 */
+      --surface-2:   oklch(95.6% 0.004 292);   /* 侧边栏/分组底 */
+      --fg:          oklch(12% 0.01 292);
+      --muted:       oklch(52% 0.012 292);
+      --border:      oklch(88.6% 0.006 292);
+      --accent:      oklch(54% 0.225 292);     /* Obsidian 紫 #7C3AED 类 */
+      --accent-text: color-mix(in oklch, var(--accent) 78%, black); /* 链接文字 ≥4.5:1 */
+      --accent-soft: color-mix(in oklch, var(--accent) 13%, transparent);
+      --fg-soft:     color-mix(in oklch, var(--fg) 5%, transparent);
+      --field:       oklch(94.4% 0.005 292);   /* 搜索框填充 */
+      --placeholder: oklch(48% 0.012 292);
+      --scrim:       oklch(10% 0.01 292 / 40%);
+      --code-bg:     oklch(95% 0.005 292);
 
       --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
       --font-body:    -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
@@ -49,19 +52,21 @@
       --fs-h3: 17px;
       --fs-body: 15px;
       --fs-meta: 12px;
-      --radius-card: 16px;
+      --radius-card: 10px;
     }
     .screen[data-theme="dark"] {
-      --bg: oklch(0% 0 0);
-      --surface: oklch(22.73% 0.004 286.1);
-      --fg: oklch(100% 0 0);
-      --muted: oklch(68.19% 0.010 286.1);
-      --border: oklch(34.14% 0.003 286.2);
-      --accent: oklch(62.43% 0.206 255.5);
+      --bg: oklch(15.5% 0.006 292);           /* Obsidian 深色画布 */
+      --surface: oklch(20.5% 0.007 292);      /* 面板 */
+      --surface-2: oklch(17.5% 0.006 292);
+      --fg: oklch(91% 0.006 292);
+      --muted: oklch(66% 0.01 292);
+      --border: oklch(31% 0.007 292);
+      --accent: oklch(71% 0.175 292);
       --accent-text: var(--accent);
-      --field: oklch(22.73% 0.004 286.1);
-      --placeholder: oklch(68.19% 0.010 286.1);
-      --scrim: oklch(8% 0.02 286 / 55%);
+      --field: oklch(20.5% 0.007 292);
+      --placeholder: oklch(66% 0.01 292);
+      --scrim: oklch(0% 0 0 / 55%);
+      --code-bg: oklch(16% 0.005 292);
     }
 
     *, *::before, *::after { box-sizing: border-box; }
@@ -188,6 +193,7 @@
     .chip-mono { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; }
     .chip-link { color: var(--accent-text); border-color: color-mix(in oklch, var(--accent) 35%, var(--border)); cursor: pointer; }
     .chip-link:hover { background: var(--accent-soft); }
+    .chip-on { background: var(--accent); border-color: var(--accent); color: #fff; }
     .tag {
       display: inline-flex; padding: 4px 10px; background: transparent;
       color: var(--muted); border: 1px solid var(--border); border-radius: 999px; font-size: 12px;
@@ -243,23 +249,75 @@
       letter-spacing: -0.01em; margin: 0; line-height: 1.2;
     }
 
-    /* note cards */
-    .note-list { display: flex; flex-direction: column; gap: 10px; }
+    /* topbar（Obsidian 风格顶栏） */
+    .topbar { padding: 6px 14px 8px; gap: 10px; }
+    .topbar-title { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: center; }
+    .topbar-title .greeting { margin: 0 0 2px; }
+    .topbar-name { font-size: 20px !important; letter-spacing: -0.02em; }
+
+    /* note cards（Obsidian 文件列表行） */
+    .note-list { display: flex; flex-direction: column; gap: 1px; }
     .note-card {
-      display: block; width: 100%; text-align: left;
+      display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);
-      padding: 14px 16px; cursor: pointer;
-      transition: background .15s, border-color .15s;
+      padding: 10px 12px; cursor: pointer;
+      transition: background .15s;
     }
-    .note-card:hover { border-color: color-mix(in oklch, var(--fg) 14%, var(--border)); }
+    .note-card:hover { background: var(--fg-soft); }
     .note-card:active { background: var(--fg-soft); }
-    .note-title { margin: 0 0 5px; font-size: 15.5px; font-weight: 600; line-height: 1.35; letter-spacing: -0.005em; }
+    .note-ic { flex: 0 0 auto; width: 17px; height: 17px; stroke: var(--muted); fill: none; stroke-width: 1.6; }
+    .note-body { flex: 1 1 auto; min-width: 0; }
+    .note-title { margin: 0; font-size: 14.5px; font-weight: 500; line-height: 1.35; letter-spacing: -0.005em; }
     .note-excerpt {
-      margin: 0 0 11px; font-size: 13px; line-height: 1.5; color: var(--muted);
-      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      margin: 2px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .note-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .note-time { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .note-right { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+    .note-label { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.03em; color: var(--accent-text); }
+    .note-time { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+    /* ─── left sidebar（Obsidian 文件树抽屉） ─────────────────────── */
+    .sidebar-layer { position: absolute; inset: 0; z-index: 28; visibility: hidden; }
+    .sidebar-layer.open { visibility: visible; }
+    .sidebar-layer .scrim { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .sidebar-layer.open .scrim { opacity: 1; }
+    .sidebar {
+      position: absolute; top: 0; left: 0; bottom: 0; width: 82%; max-width: 320px;
+      background: var(--surface-2); z-index: 2;
+      display: flex; flex-direction: column;
+      transform: translateX(-105%);
+      transition: transform .26s cubic-bezier(.32,.72,0,1);
+      padding: max(env(safe-area-inset-top), 14px) 0 max(env(safe-area-inset-bottom), 14px);
+      box-shadow: 12px 0 32px rgba(0,0,0,.18);
+    }
+    .sidebar-layer.open .sidebar { transform: translateX(0); }
+    .sidebar-head { padding: 6px 18px 12px; border-bottom: 1px solid var(--border); }
+    .sidebar-title { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+    .sidebar-sub { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
+    .sidebar-label {
+      margin: 14px 18px 6px; font-size: 11px; font-weight: 600;
+      letter-spacing: .06em; color: var(--muted); text-transform: uppercase;
+    }
+    .sidebar-nav { flex: 1 1 auto; overflow-y: auto; padding: 0 10px; }
+    .sidebar-cat {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      padding: 9px 10px; border-radius: 8px; font-size: 14.5px; text-align: left;
+      color: var(--fg); transition: background .13s;
+    }
+    .sidebar-cat:hover { background: var(--fg-soft); }
+    .sidebar-cat.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+    .sidebar-cat svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.7; flex: 0 0 auto; }
+    .sidebar-cat .cat-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sidebar-cat .cat-count { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+    .sidebar-cat.active .cat-count { color: var(--accent-text); opacity: .75; }
+    .sidebar-foot { border-top: 1px solid var(--border); padding: 10px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .sidebar-action {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      padding: 10px 8px; border-radius: 9px; font-size: 13px; color: var(--fg);
+      background: var(--surface); border: 1px solid var(--border); transition: background .13s;
+    }
+    .sidebar-action:hover { background: var(--fg-soft); }
+    .sidebar-action svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.8; }
 
     /* empty states */
     .empty-card {
@@ -382,8 +440,42 @@
       font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden;
       text-overflow: ellipsis; color: var(--fg);
     }
-    .detail-body { margin-top: 8px; }
-    .detail-body p { margin: 0 0 14px; font-size: 15px; line-height: 1.72; color: var(--fg); }
+    .detail-body { margin-top: 10px; }
+    .detail-body h1, .detail-body h2, .detail-body h3, .detail-body h4,
+    .detail-body h5, .detail-body h6 {
+      margin: 1.4em 0 .55em; font-weight: 700; letter-spacing: -0.015em; line-height: 1.3;
+    }
+    .detail-body h1 { font-size: 22px; }
+    .detail-body h2 { font-size: 19px; }
+    .detail-body h3 { font-size: 16.5px; }
+    .detail-body h4 { font-size: 15px; }
+    .detail-body h5, .detail-body h6 { font-size: 14px; color: var(--muted); }
+    .detail-body h1:first-child, .detail-body h2:first-child, .detail-body h3:first-child { margin-top: .2em; }
+    .detail-body p { margin: 0 0 14px; font-size: 15px; line-height: 1.75; color: var(--fg); }
+    .detail-body ul, .detail-body ol { margin: 0 0 14px; padding-left: 1.5em; }
+    .detail-body li { margin: 3px 0; font-size: 15px; line-height: 1.65; }
+    .detail-body blockquote {
+      margin: 0 0 14px; padding: 2px 0 2px 14px;
+      border-left: 3px solid var(--accent); color: var(--muted);
+    }
+    .detail-body blockquote p { margin: 6px 0; color: inherit; }
+    .detail-body code {
+      font-family: var(--font-mono); font-size: 13px; background: var(--code-bg);
+      border-radius: 5px; padding: 2px 5px;
+    }
+    .detail-body pre {
+      background: var(--code-bg); border-radius: 10px; padding: 12px 14px;
+      overflow-x: auto; margin: 0 0 14px;
+    }
+    .detail-body pre code { background: none; padding: 0; font-size: 12.5px; line-height: 1.6; }
+    .detail-body a { color: var(--accent-text); text-decoration: none; }
+    .detail-body a:hover { text-decoration: underline; }
+    .detail-body hr { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
+    .detail-body table { border-collapse: collapse; margin: 0 0 14px; width: 100%; font-size: 13.5px; }
+    .detail-body th, .detail-body td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; }
+    .detail-body th { background: var(--surface-2); font-weight: 600; }
+    .detail-body img { max-width: 100%; border-radius: 8px; }
+    .detail-body del { color: var(--muted); }
 
     /* ─── tab bar ──────────────────────────────────────────────────── */
     .tabbar {
@@ -625,10 +717,13 @@
         <div class="views">
           <!-- ═══ 首页 ═══ -->
           <main class="content view active" id="view-home" data-od-id="view-home" aria-hidden="false">
-            <div class="header" data-od-id="header-home">
-              <div>
+            <div class="header topbar" data-od-id="header-home">
+              <button class="icon-btn" id="btn-menu" data-od-id="btn-menu" aria-label="打开侧边栏">
+                <svg viewBox="0 0 24 24"><path d="M3.5 6.5h17M3.5 12h17M3.5 17.5h17"/></svg>
+              </button>
+              <div class="topbar-title">
                 <p class="greeting" id="home-greeting">知识库</p>
-                <h1>知识库</h1>
+                <h1 class="topbar-name">知识库</h1>
               </div>
               <button class="icon-btn" id="btn-to-profile" data-od-id="btn-to-profile" aria-label="我的">
                 <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="9.5" r="3"/><path d="M6.5 18.5c1-2.1 3.1-3.3 5.5-3.3s4.5 1.2 5.5 3.3"/></svg>
@@ -682,8 +777,12 @@
             <section class="pad" data-od-id="recent">
               <div class="section-head row-between">
                 <h2>最近笔记</h2>
-                <span class="meta" id="recent-count"></span>
+                <span class="row" style="gap: 8px;">
+                  <span class="meta" id="recent-count"></span>
+                  <button class="chip chip-link" id="btn-shuffle" aria-label="换一批随机排序">换一批</button>
+                </span>
               </div>
+              <div class="chips hidden" id="category-chips" style="margin: 0 2px 12px;"></div>
               <div class="section-head row-between hidden" id="search-head">
                 <h2>搜索结果</h2>
                 <span class="meta sh-count" id="sh-count"></span>
@@ -793,7 +892,7 @@
                 <button class="setting-row" id="setting-about" data-od-id="setting-about">
                   <span class="set-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><circle cx="12" cy="7.6" r="0.7"/></svg></span>
                   <span class="set-label">关于</span>
-                  <span class="set-sub">UA 1.0.0</span>
+                  <span class="set-sub">UA 1.1.0</span>
                   <svg class="chevron" viewBox="0 0 24 24" aria-hidden><path d="M9 5.5 15.5 12 9 18.5"/></svg>
                 </button>
               </div>
@@ -821,6 +920,29 @@
               </div>
             </div>
           </article>
+        </div>
+
+        <!-- ─── 左侧边栏（Obsidian 风格文件树导航） ─── -->
+        <div class="sidebar-layer" id="sidebar-layer" aria-hidden="true">
+          <button class="scrim" id="sidebar-scrim" tabindex="-1" aria-label="关闭侧边栏"></button>
+          <aside class="sidebar" id="sidebar" aria-label="分类导航">
+            <div class="sidebar-head">
+              <span class="sidebar-title">个人知识库</span>
+              <span class="sidebar-sub" id="sidebar-conn">未连接</span>
+            </div>
+            <p class="sidebar-label">分类</p>
+            <nav class="sidebar-nav" id="sidebar-cats" aria-label="分类"></nav>
+            <div class="sidebar-foot">
+              <button class="sidebar-action" id="sidebar-sync">
+                <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 3.5V8h-4.5"/><path d="M4 12a8 8 0 0 1 2.3 5.7"/><path d="M4 20.5V16h4.5"/></svg>
+                同步
+              </button>
+              <button class="sidebar-action" id="sidebar-conn-open">
+                <svg viewBox="0 0 24 24"><path d="M10 14a4.5 4.5 0 0 0 6.4.4l2.5-2.5a4.5 4.5 0 0 0-6.4-6.4l-1.5 1.5"/><path d="M14 10a4.5 4.5 0 0 0-6.4-.4l-2.5 2.5a4.5 4.5 0 0 0 6.4 6.4l1.5-1.5"/></svg>
+                连接设置
+              </button>
+            </div>
+          </aside>
         </div>
 
         <!-- ─── 底部 tab ─── -->
@@ -884,7 +1006,7 @@
             <span class="grabber" aria-hidden="true"></span>
             <div class="about-mark">U</div>
             <h2 class="sheet-title" id="sheet-about-title" style="text-align:center;">UA</h2>
-            <p class="sheet-sub meta" style="text-align:center;">版本 1.0.0</p>
+            <p class="sheet-sub meta" style="text-align:center;">版本 1.1.0</p>
             <p class="about-line">随手记录 · 随时检索 · 收藏沉淀</p>
             <p class="about-text meta">个人知识库的移动端入口。数据本地优先，支持多端同步。</p>
             <div class="sheet-actions">
