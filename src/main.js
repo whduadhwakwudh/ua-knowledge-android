@@ -24,6 +24,7 @@ import { buildSearchIndex } from './search-index.js';
 import { createFavoritesStore } from './favorites.js';
 import { mountApp } from './ui.js';
 import { downloadAndVerifyApk } from './apk-download.js';
+import { createLlmClient, LlmError } from './llm-client.js';
 
 export function createAppState() {
   return {
@@ -65,6 +66,8 @@ function blankRuntimeState() {
     // 智能助手：对话历史（本地 IndexedDB）与提问状态。
     assistantMessages: [],
     assistantAsking: false,
+    // 手机内置助手：LLM API Key（安全存储），有 key 时助手直连 LLM，不依赖服务器。
+    llmApiKey: null,
   };
 }
 
@@ -158,9 +161,12 @@ export async function bootstrapApp(options = {}) {
     fetchImpl,
     apiTimeoutMs,
     randomImpl,
+    llmTransport,
   } = options;
   // 随机排序的随机源；测试可注入固定序列，生产用 Math.random。
   const rng = typeof randomImpl === 'function' ? randomImpl : Math.random;
+  // 手机内置助手的 LLM 传输层；测试可注入，生产默认 CapacitorHttp/fetch。
+  const llmTransportImpl = llmTransport;
   const connectionStore = connectionStoreImpl ?? (await createProductionConnectionStore({ isNative }));
   const db = dbImpl ?? (await openKnowledgeDb());
   const favoritesStore = createFavoritesStore(db);
@@ -179,10 +185,12 @@ export async function bootstrapApp(options = {}) {
   state.token = stored.token;
   state.connection = stored.configured ? 'connected' : 'unconfigured';
   state.storageWarning = connectionStore.storageWarning ?? null;
+  state.llmApiKey = stored.llmApiKey ?? null;
 
   let api = null;
   let engine = null;
   let search = null;
+  let llmClient = null;
   let allDocuments = [];
   let allArtifacts = [];
   let docById = new Map();
@@ -289,6 +297,10 @@ export async function bootstrapApp(options = {}) {
   async function rebuildApi(baseUrl, token) {
     api = createApiClient({ baseUrl, token, fetchImpl, timeoutMs: apiTimeoutMs });
     engine = createSyncEngine({ api, db });
+    // 手机内置助手：有 key 时直连 LLM（不依赖同步服务）。
+    llmClient = state.llmApiKey
+      ? createLlmClient({ apiKey: state.llmApiKey, transport: llmTransportImpl })
+      : null;
     await refreshCachedContent();
   }
 
@@ -390,16 +402,20 @@ export async function bootstrapApp(options = {}) {
     }
   }
 
-  async function saveConnection(baseUrl, token) {
+  async function saveConnection(baseUrl, token, llmApiKey) {
     const url = baseUrl || state.baseUrl;
     const tok = token || state.token;
     ui.setConnectionBusy(true);
     try {
-      await connectionStore.save({ baseUrl: url, token: tok });
+      // llmApiKey 为 undefined 表示保持不变；空串清除；非空覆盖。
+      await connectionStore.save({ baseUrl: url, token: tok, llmApiKey });
       state.baseUrl = url;
       state.token = tok;
       state.tokenPresent = true;
       state.connection = 'connected';
+      if (llmApiKey !== undefined) {
+        state.llmApiKey = llmApiKey.trim() !== '' ? llmApiKey.trim() : null;
+      }
       await rebuildApi(url, tok);
       ui.closeSheets();
       ui.update(state);
@@ -437,6 +453,7 @@ export async function bootstrapApp(options = {}) {
     state.allDocuments = [];
     state.assistantMessages = [];
     state.assistantAsking = false;
+    state.llmApiKey = null;
     allDocuments = [];
     allArtifacts = [];
     docById = new Map();
@@ -444,6 +461,7 @@ export async function bootstrapApp(options = {}) {
     search = null;
     api = null;
     engine = null;
+    llmClient = null;
     ui.closeSheets();
     ui.setConnectionStatus('已清除连接设置');
     ui.setConnectionBusy(false);
@@ -454,7 +472,7 @@ export async function bootstrapApp(options = {}) {
     if (payload.action === 'test') {
       await testConnection(payload.baseUrl, payload.token);
     } else if (payload.action === 'save') {
-      await saveConnection(payload.baseUrl, payload.token);
+      await saveConnection(payload.baseUrl, payload.token, payload.llmApiKey);
     } else if (payload.action === 'clear') {
       await clearConnection();
     }
@@ -516,8 +534,10 @@ export async function bootstrapApp(options = {}) {
     const trimmed = (question ?? '').trim();
     if (!trimmed) return;
     if (state.assistantAsking) return;
-    if (!api) {
-      ui.toast('请先完成连接设置');
+    // 手机内置助手：已配置 LLM API Key 时直接在本机调用（不依赖同步服务，
+    // 电脑/服务器关机也可用）；否则走同步服务的 /v1/ask。
+    if (!llmClient && !api) {
+      ui.toast(state.llmApiKey ? '助手初始化失败，请重新保存设置' : '请先完成连接设置');
       ui.openConnectionSheet();
       return;
     }
@@ -532,7 +552,9 @@ export async function bootstrapApp(options = {}) {
     ui.update(state);
     try {
       const knowledge = retrieveKnowledge(trimmed);
-      const { answer } = await api.askQuestion(trimmed, knowledge);
+      const { answer } = llmClient
+        ? await llmClient.ask(trimmed, knowledge)
+        : await api.askQuestion(trimmed, knowledge);
       const reply = { role: 'assistant', text: answer, createdAt: new Date().toISOString() };
       state.assistantMessages = [...state.assistantMessages, reply];
       try {
@@ -541,17 +563,19 @@ export async function bootstrapApp(options = {}) {
         // 同上。
       }
     } catch (err) {
-      if (err && err.code === ApiError.ASSISTANT_UNAVAILABLE) {
-        ui.toast('助手未配置，请稍后再试');
-      } else if (err && err.code === ApiError.ASSISTANT_TIMEOUT) {
+      if (err && (err instanceof LlmError ? err.code === 'not_configured' : err.code === ApiError.ASSISTANT_UNAVAILABLE)) {
+        ui.toast('助手未配置，请先填写 API Key');
+      } else if (err && (err instanceof LlmError ? err.code === 'timeout' : err.code === ApiError.ASSISTANT_TIMEOUT)) {
         ui.toast('回答超时，请重试');
       } else if (err && err.code === ApiError.UNAUTHORIZED) {
         state.connection = 'auth-error';
         ui.toast('认证失败，请重新连接');
-      } else if (err && err.code === ApiError.NETWORK) {
+      } else if (err && (err instanceof LlmError ? err.code === 'network' : err.code === ApiError.NETWORK)) {
         ui.toast('网络不可达，请稍后重试');
       } else if (err && err.code === ApiError.RATE_LIMITED) {
         ui.toast('提问太频繁，请稍后再试');
+      } else if (err && (err instanceof LlmError ? err.code === 'upstream' || err.code === 'parse' : false)) {
+        ui.toast('回答失败，请稍后重试');
       } else {
         ui.toast('回答失败，请稍后重试');
       }

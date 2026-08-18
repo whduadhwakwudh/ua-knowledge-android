@@ -3,6 +3,7 @@ import {
   KEY_PREFIX,
   BASE_URL_KEY,
   DEVICE_TOKEN_KEY,
+  LLM_API_KEY,
   WEB_STORAGE_WARNING,
   normalizeBaseUrl,
   validateToken,
@@ -199,17 +200,19 @@ describe('createConnectionStore', () => {
       baseUrl: 'https://api.example.com/kb',
       tokenPresent: true,
       token: FAKE_TOKEN,
+      llmApiKey: null,
     });
     expect(loaded.deviceToken).toBeUndefined();
 
     await store.clear();
-    // Secret token key must be removed before the base URL.
-    expect(adapter.calls.remove).toEqual([DEVICE_TOKEN_KEY, BASE_URL_KEY]);
+    // Secret token key must be removed before the base URL; LLM key last.
+    expect(adapter.calls.remove).toEqual([DEVICE_TOKEN_KEY, BASE_URL_KEY, LLM_API_KEY]);
     expect(await store.load()).toEqual({
       configured: false,
       baseUrl: null,
       tokenPresent: false,
       token: null,
+      llmApiKey: null,
     });
   });
 
@@ -242,6 +245,7 @@ describe('createConnectionStore', () => {
       baseUrl: null,
       tokenPresent: false,
       token: null,
+      llmApiKey: null,
     });
   });
 
@@ -255,6 +259,7 @@ describe('createConnectionStore', () => {
       baseUrl: null,
       tokenPresent: false,
       token: null,
+      llmApiKey: null,
     });
   });
 
@@ -321,6 +326,7 @@ describe('createConnectionStore', () => {
       baseUrl: null,
       tokenPresent: false,
       token: null,
+      llmApiKey: null,
     });
   });
 
@@ -360,6 +366,7 @@ describe('createConnectionStore', () => {
       baseUrl: null,
       tokenPresent: false,
       token: null,
+      llmApiKey: null,
     });
   });
 
@@ -406,6 +413,7 @@ describe('createConnectionStore', () => {
       baseUrl: null,
       tokenPresent: false,
       token: null,
+      llmApiKey: null,
     });
   });
 
@@ -423,6 +431,7 @@ describe('createConnectionStore', () => {
       baseUrl: null,
       tokenPresent: false,
       token: null,
+      llmApiKey: null,
     });
     expect(JSON.stringify(loaded)).not.toContain(FAKE_TOKEN);
   });
@@ -507,6 +516,7 @@ describe('createConnectionStore', () => {
       baseUrl: 'https://api.example.com/kb',
       tokenPresent: true,
       token: FAKE_TOKEN,
+      llmApiKey: null,
     });
     const status = await store.publicStatus();
     await store.clear();
@@ -523,6 +533,59 @@ describe('createConnectionStore', () => {
     const storeB = storeWith(createWebAdapter());
     await storeA.save({ baseUrl: 'https://a.example.com', token: FAKE_TOKEN });
     expect(await storeB.load()).toMatchObject({ configured: false });
+  });
+});
+
+describe('createConnectionStore — 助手 API Key (llmApiKey)', () => {
+  it('saves and loads an optional LLM API key without affecting configured state', async () => {
+    const adapter = spyAdapter();
+    const store = storeWith(adapter);
+    await store.save({ baseUrl: 'https://api.example.com', token: FAKE_TOKEN, llmApiKey: 'sk-my-key-12345' });
+    expect(adapter.calls.set).toContainEqual([LLM_API_KEY, 'sk-my-key-12345']);
+    const loaded = await store.load();
+    expect(loaded.llmApiKey).toBe('sk-my-key-12345');
+    expect(loaded.configured).toBe(true);
+  });
+
+  it('undefined llmApiKey keeps the previously saved key; empty string clears it', async () => {
+    const adapter = spyAdapter();
+    const store = storeWith(adapter);
+    await store.save({ baseUrl: 'https://api.example.com', token: FAKE_TOKEN, llmApiKey: 'sk-keep-12345' });
+    await store.save({ baseUrl: 'https://api.example.com', token: FAKE_TOKEN });
+    expect(await store.load()).toMatchObject({ llmApiKey: 'sk-keep-12345' });
+
+    await store.save({ baseUrl: 'https://api.example.com', token: FAKE_TOKEN, llmApiKey: '' });
+    expect(await store.load()).toMatchObject({ llmApiKey: null });
+    expect(adapter.calls.remove).toContain(LLM_API_KEY);
+  });
+
+  it('clear removes the LLM key too', async () => {
+    const adapter = spyAdapter();
+    const store = storeWith(adapter);
+    await store.save({ baseUrl: 'https://api.example.com', token: FAKE_TOKEN, llmApiKey: 'sk-clear-12345' });
+    await store.clear();
+    expect(adapter.calls.remove).toContain(LLM_API_KEY);
+    expect(await store.load()).toMatchObject({ llmApiKey: null });
+  });
+
+  it('rejects an invalid LLM key without leaking the value', async () => {
+    const adapter = spyAdapter();
+    const store = storeWith(adapter);
+    const evil = 'not-a-key!!!';
+    await expect(store.save({ baseUrl: 'https://api.example.com', token: FAKE_TOKEN, llmApiKey: evil })).rejects.toThrow(
+      /API Key|格式/,
+    );
+    expect(adapter.calls.set).toHaveLength(0);
+  });
+
+  it('load treats an invalid stored LLM key as not configured (fail closed)', async () => {
+    const adapter = spyAdapter();
+    await adapter.set(BASE_URL_KEY, 'https://api.example.com');
+    await adapter.set(DEVICE_TOKEN_KEY, FAKE_TOKEN);
+    await adapter.set(LLM_API_KEY, '!!!bad');
+    const loaded = await storeWith(adapter).load();
+    expect(loaded.llmApiKey).toBeNull();
+    expect(loaded.configured).toBe(true);
   });
 });
 

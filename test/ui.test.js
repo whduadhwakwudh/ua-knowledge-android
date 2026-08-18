@@ -670,7 +670,7 @@ describe('mountApp — connection sheet', () => {
     expect($id(container, 'conn-token-err').textContent.length).toBeGreaterThan(0);
   });
 
-  it('save/test/clear carry the expected payloads; empty token means keep existing', () => {
+  it('save/test/clear carry the expected payloads; empty token/key mean keep existing', () => {
     const { container, ui, calls } = mountDOM();
     ui.update(baseState({ baseUrl: 'https://kb.example.com', tokenPresent: true }));
     $id(container, 'setting-connection').click();
@@ -678,14 +678,48 @@ describe('mountApp — connection sheet', () => {
     $id(container, 'conn-base-url').value = 'https://kb.example.com/';
     $id(container, 'conn-token').value = '';
     $id(container, 'conn-save').click();
-    expect(calls.conn.at(-1)).toEqual({ action: 'save', baseUrl: 'https://kb.example.com/', token: '' });
+    expect(calls.conn.at(-1)).toEqual({
+      action: 'save',
+      baseUrl: 'https://kb.example.com/',
+      token: '',
+      llmApiKey: '',
+    });
 
     $id(container, 'conn-token').value = FAKE_TOKEN;
     $id(container, 'conn-test').click();
-    expect(calls.conn.at(-1)).toEqual({ action: 'test', baseUrl: 'https://kb.example.com/', token: FAKE_TOKEN });
+    expect(calls.conn.at(-1)).toEqual({
+      action: 'test',
+      baseUrl: 'https://kb.example.com/',
+      token: FAKE_TOKEN,
+      llmApiKey: '',
+    });
 
     $id(container, 'conn-clear').click();
     expect(calls.conn.at(-1)).toEqual({ action: 'clear' });
+  });
+
+  it('the assistant API Key field is a masked input and its value rides the save payload', () => {
+    const { container, ui, calls } = mountDOM();
+    ui.update(baseState({ baseUrl: 'https://kb.example.com', tokenPresent: true }));
+    $id(container, 'setting-connection').click();
+    const keyInput = $id(container, 'conn-llm-key');
+    expect(keyInput.type).toBe('password');
+    keyInput.value = 'sk-phone-key-12345';
+    $id(container, 'conn-save').click();
+    expect(calls.conn.at(-1).llmApiKey).toBe('sk-phone-key-12345');
+    // Key 不回显到 DOM。
+    expect(container.textContent).not.toContain('sk-phone-key-12345');
+  });
+
+  it('rejects an invalid assistant API Key with an inline error', () => {
+    const { container, ui, calls } = mountDOM();
+    ui.update(baseState({ baseUrl: 'https://kb.example.com', tokenPresent: true }));
+    $id(container, 'setting-connection').click();
+    $id(container, 'conn-llm-key').value = '!!!bad key!!!';
+    $id(container, 'conn-save').click();
+    expect(calls.conn.filter((c) => c.action === 'save')).toHaveLength(0);
+    expect(isHidden($id(container, 'conn-llm-key-err'))).toBe(false);
+    expect($id(container, 'conn-llm-key-err').textContent.length).toBeGreaterThan(0);
   });
 
   it('keeps the token out of the rendered DOM even while it is typed into the masked field', () => {

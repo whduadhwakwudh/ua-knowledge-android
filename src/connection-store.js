@@ -14,6 +14,8 @@
 export const KEY_PREFIX = 'ua_kb_';
 export const BASE_URL_KEY = 'base_url';
 export const DEVICE_TOKEN_KEY = 'device_token';
+/** 手机内置助手的 LLM API Key（可选，独立于同步服务凭据）。 */
+export const LLM_API_KEY = 'llm_api_key';
 
 export const WEB_STORAGE_WARNING =
   'Web storage is development-only and unencrypted: connection settings are held in memory and are lost when the app closes.';
@@ -73,8 +75,27 @@ export function validateToken(value) {
   return { ok: true };
 }
 
+/**
+ * Validates an LLM API key (optional setting). Empty/undefined is valid
+ * (not configured); a non-empty value must look like a bearer key (sk-…).
+ * @returns {{ok: true} | {ok: false, error: string}}
+ */
+export function validateLlmApiKey(value) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return { ok: true };
+  }
+  const trimmed = value.trim();
+  if (trimmed.length < 8 || trimmed.length > 256) {
+    return { ok: false, error: 'API Key 长度应在 8–256 字符之间' };
+  }
+  if (!/^[A-Za-z0-9._-]+$/.test(trimmed) || !trimmed.startsWith('sk')) {
+    return { ok: false, error: 'API Key 格式不正确（应以 sk 开头）' };
+  }
+  return { ok: true };
+}
+
 function unconfiguredState() {
-  return { configured: false, baseUrl: null, tokenPresent: false, token: null };
+  return { configured: false, baseUrl: null, tokenPresent: false, token: null, llmApiKey: null };
 }
 
 /**
@@ -83,7 +104,7 @@ function unconfiguredState() {
  * the native adapter applies the `ua_kb_` prefix via SecureStorage.setKeyPrefix.
  */
 export function createConnectionStore(adapter) {
-  async function save({ baseUrl, token }) {
+  async function save({ baseUrl, token, llmApiKey }) {
     const urlResult = normalizeBaseUrl(baseUrl);
     if (!urlResult.ok) {
       throw new TypeError(urlResult.error);
@@ -92,9 +113,21 @@ export function createConnectionStore(adapter) {
     if (!tokenResult.ok) {
       throw new TypeError(tokenResult.error);
     }
+    const keyResult = validateLlmApiKey(llmApiKey);
+    if (!keyResult.ok) {
+      throw new TypeError(keyResult.error);
+    }
     try {
       await adapter.set(BASE_URL_KEY, urlResult.value);
       await adapter.set(DEVICE_TOKEN_KEY, token);
+      // llmApiKey 为 undefined 表示保持不变；字符串（可为空）表示覆盖/清除。
+      if (llmApiKey !== undefined) {
+        if (typeof llmApiKey === 'string' && llmApiKey.trim() !== '') {
+          await adapter.set(LLM_API_KEY, llmApiKey.trim());
+        } else {
+          await adapter.remove(LLM_API_KEY);
+        }
+      }
     } catch {
       // Best-effort cleanup on a failed save so no readable configured or
       // secret state remains. The secret key is removed first; cleanup
@@ -124,9 +157,11 @@ export function createConnectionStore(adapter) {
   async function load() {
     let rawUrl;
     let rawToken;
+    let rawLlmKey;
     try {
       rawUrl = await adapter.get(BASE_URL_KEY);
       rawToken = await adapter.get(DEVICE_TOKEN_KEY);
+      rawLlmKey = await adapter.get(LLM_API_KEY);
     } catch {
       // Fail closed on adapter read errors: reported as unconfigured.
       return unconfiguredState();
@@ -141,6 +176,9 @@ export function createConnectionStore(adapter) {
       baseUrl: configured ? urlResult.value : null,
       tokenPresent: configured,
       token: configured ? rawToken : null,
+      // 助手 API Key 独立于同步连接：有值即返回，格式不合法则视为未配置。
+      llmApiKey:
+        typeof rawLlmKey === 'string' && validateLlmApiKey(rawLlmKey).ok ? rawLlmKey : null,
     };
   }
 
@@ -154,6 +192,11 @@ export function createConnectionStore(adapter) {
     }
     try {
       await adapter.remove(BASE_URL_KEY);
+    } catch {
+      throw new Error('failed to clear connection settings');
+    }
+    try {
+      await adapter.remove(LLM_API_KEY);
     } catch {
       throw new Error('failed to clear connection settings');
     }

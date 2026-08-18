@@ -347,4 +347,49 @@ describe('bootstrapApp — assistant ask flow', () => {
     expect(app.state.assistantMessages.length).toBe(1);
     expect(app.state.assistantMessages[0].role).toBe('user');
   });
+
+  it('uses the on-device LLM when an API key is configured (no sync server involved)', async () => {
+    const { window } = dom;
+    const container = window.document.getElementById('screen');
+    const adapter = createWebAdapter();
+    const store = createConnectionStore(adapter);
+    await store.save({ baseUrl: VALID_BASE, token: FAKE_TOKEN, llmApiKey: 'sk-phone-key-12345' });
+    await seedCache();
+
+    let transportCall = null;
+    const app = await bootstrapApp({
+      container,
+      isNative: false,
+      connectionStoreImpl: store,
+      dbImpl: db,
+      randomImpl: () => 0,
+      llmTransport: async (req) => {
+        transportCall = req;
+        return {
+          status: 200,
+          headers: {},
+          text: JSON.stringify({ choices: [{ message: { content: '内置回答：指纹缓存 TTL 5 秒。' } }] }),
+        };
+      },
+      fetchImpl: async () => {
+        throw new Error('server must not be called for the on-device assistant');
+      },
+    });
+
+    expect(app.state.llmApiKey).toBe('sk-phone-key-12345');
+
+    const input = container.querySelector('#chat-input');
+    input.value = '缓存多久失效？';
+    container.querySelector('#chat-send').click();
+
+    await vi.waitFor(() => {
+      expect(app.state.assistantMessages.length).toBe(2);
+    });
+    expect(app.state.assistantMessages[1].text).toContain('内置回答');
+    // 直连 LLM：transport 收到 key、问题与本地检索出的知识片段。
+    expect(transportCall).not.toBeNull();
+    expect(transportCall.apiKey).toBe('sk-phone-key-12345');
+    expect(transportCall.messages[1].content).toContain('缓存多久失效？');
+    expect(transportCall.messages[1].content).toContain('wiki/同步协议.md');
+  });
 });

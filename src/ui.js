@@ -23,7 +23,7 @@
  *   (markdown bodies arrive pre-sanitized via renderMarkdown).
  */
 
-import { normalizeBaseUrl, validateToken } from './connection-store.js';
+import { normalizeBaseUrl, validateToken, validateLlmApiKey } from './connection-store.js';
 import { renderMarkdown } from './markdown.js';
 
 const HIDDEN = 'hidden';
@@ -138,6 +138,8 @@ export function mountApp(container, wiring = {}) {
       // The base URL is not a secret and may be prefilled; the token never is.
       $('#conn-base-url').value = state.baseUrl ?? '';
       $('#conn-token').value = '';
+      // 助手 API Key 同样不回显（敏感凭据）。
+      $('#conn-llm-key').value = '';
     }
     if ($('#conn-storage-warning')) {
       $('#conn-storage-warning').textContent = state.storageWarning ?? '';
@@ -166,9 +168,9 @@ export function mountApp(container, wiring = {}) {
   }
 
   function showConnectionErrors(errors = {}) {
-    const fields = { baseUrl: $('#conn-base-url'), token: $('#conn-token') };
-    const errEls = { baseUrl: $('#conn-base-url-err'), token: $('#conn-token-err') };
-    for (const key of ['baseUrl', 'token']) {
+    const fields = { baseUrl: $('#conn-base-url'), token: $('#conn-token'), llmKey: $('#conn-llm-key') };
+    const errEls = { baseUrl: $('#conn-base-url-err'), token: $('#conn-token-err'), llmKey: $('#conn-llm-key-err') };
+    for (const key of ['baseUrl', 'token', 'llmKey']) {
       const message = errors[key];
       if (errEls[key]) {
         errEls[key].textContent = message ?? '';
@@ -181,6 +183,7 @@ export function mountApp(container, wiring = {}) {
   function submitConnection(action) {
     const baseUrl = ($('#conn-base-url')?.value ?? '').trim();
     const token = $('#conn-token')?.value ?? '';
+    const llmApiKey = $('#conn-llm-key')?.value ?? '';
     const errors = {};
     if (!baseUrl) {
       errors.baseUrl = '服务器地址不能为空';
@@ -193,12 +196,17 @@ export function mountApp(container, wiring = {}) {
     } else if (!state.tokenPresent) {
       errors.token = '设备令牌不能为空';
     }
+    if (llmApiKey.trim() !== '') {
+      const keyResult = validateLlmApiKey(llmApiKey);
+      if (!keyResult.ok) errors.llmKey = keyResult.error;
+    }
     if (Object.keys(errors).length > 0) {
       showConnectionErrors(errors);
       return;
     }
     showConnectionErrors({});
-    wiring.onConnectionChange?.({ action, baseUrl, token });
+    // llmApiKey 空串 = 保持已保存值不变（与 token 语义一致）。
+    wiring.onConnectionChange?.({ action, baseUrl, token, llmApiKey: llmApiKey.trim() });
   }
 
   /* ─── theme ─────────────────────────────────────────────── */
@@ -771,7 +779,10 @@ export function mountApp(container, wiring = {}) {
     showConnectionErrors({ baseUrl: '', token: currentTokenError() }),
   );
   $('#conn-token')?.addEventListener('input', () =>
-    showConnectionErrors({ baseUrl: currentBaseUrlError(), token: '' }),
+    showConnectionErrors({ baseUrl: currentBaseUrlError(), token: '', llmKey: currentLlmKeyError() }),
+  );
+  $('#conn-llm-key')?.addEventListener('input', () =>
+    showConnectionErrors({ baseUrl: currentBaseUrlError(), token: currentTokenError(), llmKey: '' }),
   );
 
   function currentBaseUrlError() {
@@ -780,6 +791,10 @@ export function mountApp(container, wiring = {}) {
   }
   function currentTokenError() {
     const el = $('#conn-token-err');
+    return el && !el.classList.contains(HIDDEN) ? el.textContent : '';
+  }
+  function currentLlmKeyError() {
+    const el = $('#conn-llm-key-err');
     return el && !el.classList.contains(HIDDEN) ? el.textContent : '';
   }
 
