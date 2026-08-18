@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
-import { mountApp } from '../src/ui.js';
+import { clampReadScale, mountApp } from '../src/ui.js';
 import { renderMarkdown } from '../src/markdown.js';
 
 /**
@@ -122,6 +122,24 @@ function mountDOM(wiringOverrides = {}) {
 
 const $id = (container, id) => container.querySelector('#' + id);
 const isHidden = (el) => !el || el.classList.contains('hidden');
+
+describe('clampReadScale — 阅读页双指缩放系数', () => {
+  it('clamps to the 0.7–2.5 range', () => {
+    expect(clampReadScale(0.3)).toBe(0.7);
+    expect(clampReadScale(5)).toBe(2.5);
+    expect(clampReadScale(1.5)).toBe(1.5);
+    expect(clampReadScale(0.7)).toBe(0.7);
+    expect(clampReadScale(2.5)).toBe(2.5);
+  });
+
+  it('falls back to 1 for invalid input', () => {
+    expect(clampReadScale(NaN)).toBe(1);
+    expect(clampReadScale(Infinity)).toBe(1);
+    expect(clampReadScale('2')).toBe(1);
+    expect(clampReadScale(undefined)).toBe(1);
+    expect(clampReadScale(null)).toBe(1);
+  });
+});
 
 describe('mountApp — reads the shipped shell, no write affordances', () => {
   it('renders cached documents into the recent list', () => {

@@ -60,6 +60,20 @@ function todayGreeting() {
   }
 }
 
+/** 阅读缩放系数钳制范围（0.7×–2.5×），非法输入回退 1。 */
+export function clampReadScale(value, min = 0.7, max = 2.5) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1;
+  return Math.min(max, Math.max(min, value));
+}
+
+/** 两指触摸距离（px）；不足两指返回 0。 */
+function touchDistance(touches) {
+  if (!touches || touches.length < 2) return 0;
+  const a = touches[0];
+  const b = touches[1];
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+}
+
 export function mountApp(container, wiring = {}) {
   const doc = container.ownerDocument;
   const $ = (selector) => container.querySelector(selector);
@@ -616,6 +630,52 @@ export function mountApp(container, wiring = {}) {
     renderSidebar(state);
     renderAssistant(state);
     applyTab(state.tab ?? 'home');
+  }
+
+  /* ─── detail reading zoom: 双指缩放正文字号 ─────────────── */
+  const READ_SCALE_KEY = 'ua-read-scale';
+  const detailScroll = $('#detail-scroll');
+  if (detailScroll) {
+    let savedScale = 1;
+    try {
+      savedScale = clampReadScale(Number(viewport.localStorage?.getItem(READ_SCALE_KEY) ?? 1));
+    } catch {
+      savedScale = 1;
+    }
+    if (savedScale !== 1) detailScroll.style.setProperty('--read-scale', String(savedScale));
+
+    let pinch = null;
+    detailScroll.addEventListener(
+      'touchstart',
+      (e) => {
+        if (e.touches.length === 2) {
+          pinch = { startDist: touchDistance(e.touches), startScale: savedScale };
+        }
+      },
+      { passive: true },
+    );
+    detailScroll.addEventListener(
+      'touchmove',
+      (e) => {
+        if (pinch && e.touches.length === 2) {
+          e.preventDefault();
+          const ratio = touchDistance(e.touches) / (pinch.startDist || 1);
+          savedScale = clampReadScale(pinch.startScale * ratio);
+          detailScroll.style.setProperty('--read-scale', String(savedScale));
+          try {
+            viewport.localStorage.setItem(READ_SCALE_KEY, String(savedScale));
+          } catch {
+            // 缩放记忆是尽力而为。
+          }
+        }
+      },
+      { passive: false },
+    );
+    const endPinch = () => {
+      pinch = null;
+    };
+    detailScroll.addEventListener('touchend', endPinch);
+    detailScroll.addEventListener('touchcancel', endPinch);
   }
 
   /* ═══ event binding (once) ════════════════════════════════ */
