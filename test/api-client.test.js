@@ -884,3 +884,122 @@ describe('artifactUrl()', () => {
     expect(url).toMatch(/^https:\/\//);
   });
 });
+
+describe('askQuestion()', () => {
+  it('POSTs question + knowledge to /v1/ask with the bearer token and returns the answer', async () => {
+    let captured;
+    const client = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      fetchImpl: async (url, opts) => {
+        captured = { url, opts };
+        return jsonResponse({ answer: '知识库在 wiki/ 下。' });
+      },
+    });
+    const knowledge = [{ title: 't', excerpt: 'e', relativePath: 'wiki/a.md' }];
+    const result = await client.askQuestion('知识库在哪？', knowledge);
+    expect(result.answer).toBe('知识库在 wiki/ 下。');
+    expect(captured.url).toBe(`${BASE}/v1/ask`);
+    expect(captured.opts.method).toBe('POST');
+    expect(JSON.parse(captured.opts.body)).toEqual({ question: '知识库在哪？', knowledge });
+    expect(authHeaderEntries(captured.opts).length).toBe(1);
+  });
+
+  it('never sends the token in the body or URL', async () => {
+    let captured;
+    const client = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      fetchImpl: async (url, opts) => {
+        captured = { url, opts };
+        return jsonResponse({ answer: 'ok' });
+      },
+    });
+    await client.askQuestion('hi');
+    expect(String(captured.opts.body)).not.toContain(FAKE_TOKEN);
+    expect(String(captured.url)).not.toContain(FAKE_TOKEN);
+  });
+
+  it('maps 503 to ASSISTANT_UNAVAILABLE', async () => {
+    const client = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      fetchImpl: async () => jsonResponse({ error: 'assistant_not_configured' }, { status: 503 }),
+    });
+    await expect(client.askQuestion('hi')).rejects.toMatchObject({
+      code: 'ASSISTANT_UNAVAILABLE',
+      status: 503,
+    });
+  });
+
+  it('maps 504 to ASSISTANT_TIMEOUT', async () => {
+    const client = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      fetchImpl: async () => jsonResponse({ error: 'assistant_timeout' }, { status: 504 }),
+    });
+    await expect(client.askQuestion('hi')).rejects.toMatchObject({
+      code: 'ASSISTANT_TIMEOUT',
+      status: 504,
+    });
+  });
+
+  it('maps 429 to RATE_LIMITED and 500 to SERVER', async () => {
+    const rateLimited = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      fetchImpl: async () => jsonResponse({ error: 'rate_limit_exceeded' }, { status: 429 }),
+    });
+    await expect(rateLimited.askQuestion('hi')).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+
+    const serverError = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      fetchImpl: async () => jsonResponse({ error: 'boom' }, { status: 500 }),
+    });
+    await expect(serverError.askQuestion('hi')).rejects.toMatchObject({ code: 'SERVER' });
+  });
+
+  it('rejects a malformed or empty answer payload with SCHEMA', async () => {
+    for (const body of [{}, { answer: '' }, { answer: '   ' }, { answer: 42 }, 'nope']) {
+      const client = createApiClient({
+        baseUrl: BASE,
+        token: FAKE_TOKEN,
+        fetchImpl: async () => jsonResponse(body),
+      });
+      await expect(client.askQuestion('hi')).rejects.toMatchObject({ code: 'SCHEMA' });
+    }
+  });
+
+  it('maps network failure and timeout to NETWORK', async () => {
+    const network = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      fetchImpl: async () => {
+        throw new TypeError('fetch failed');
+      },
+    });
+    await expect(network.askQuestion('hi')).rejects.toMatchObject({ code: 'NETWORK' });
+
+    const hung = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      timeoutMs: 20,
+      fetchImpl: () => new Promise(() => {}),
+    });
+    await expect(hung.askQuestion('hi')).rejects.toMatchObject({ code: 'NETWORK' });
+  });
+
+  it('rejects an oversized answer via content-length with INTEGRITY', async () => {
+    const client = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ answer: 'x'.repeat(1024) }), {
+          status: 200,
+          headers: { 'content-type': 'application/json', 'content-length': String(1024 * 1024 * 1024) },
+        }),
+    });
+    await expect(client.askQuestion('hi')).rejects.toMatchObject({ code: 'INTEGRITY' });
+  });
+});

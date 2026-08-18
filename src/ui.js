@@ -24,6 +24,7 @@
  */
 
 import { normalizeBaseUrl, validateToken } from './connection-store.js';
+import { renderMarkdown } from './markdown.js';
 
 const HIDDEN = 'hidden';
 const STAR_PATH = 'M12 3.6l2.56 5.2 5.73.83-4.14 4.04.98 5.7L12 16.72l-5.13 2.7.98-5.7L3.7 9.63l5.73-.83L12 3.6z';
@@ -575,6 +576,34 @@ export function mountApp(container, wiring = {}) {
     currentDetailId = null;
   }
 
+  /* ─── rendering: assistant ──────────────────────────────── */
+  function renderAssistant(state) {
+    const messages = state.assistantMessages ?? [];
+    const asking = !!state.assistantAsking;
+    const list = $('#chat-list');
+    const input = $('#chat-input');
+    const sendBtn = $('#chat-send');
+    const emptyWrap = $('#chat-empty-wrap');
+
+    toggleHidden(emptyWrap, messages.length > 0 || asking);
+    if (list) {
+      const items = messages.map((m) => {
+        if (m.role === 'user') {
+          return '<div class="chat-msg user">' + esc(m.text) + '</div>';
+        }
+        return '<div class="chat-msg assistant detail-body">' + renderMarkdown(m.text ?? '') + '</div>';
+      });
+      if (asking) {
+        items.push('<div class="chat-msg typing"><span class="t-dot"></span><span class="t-dot"></span><span class="t-dot"></span></div>');
+      }
+      list.innerHTML = items.join('');
+      const scroll = $('#chat-scroll');
+      if (scroll) scroll.scrollTop = scroll.scrollHeight;
+    }
+    if (input) input.disabled = asking;
+    if (sendBtn) sendBtn.disabled = asking;
+  }
+
   /* ─── full render ───────────────────────────────────────── */
   function update(nextState) {
     state = nextState ?? {};
@@ -585,6 +614,7 @@ export function mountApp(container, wiring = {}) {
     renderMe(state);
     renderDetail(state);
     renderSidebar(state);
+    renderAssistant(state);
     applyTab(state.tab ?? 'home');
   }
 
@@ -627,6 +657,30 @@ export function mountApp(container, wiring = {}) {
     openConnectionSheet();
     wiring.onConnectionChange?.({ action: 'open' });
   });
+
+  /* ─── assistant chat ────────────────────────────────────── */
+  function submitChat() {
+    const input = $('#chat-input');
+    if (!input || input.disabled) return;
+    const question = input.value.trim();
+    if (question === '') return;
+    input.value = '';
+    input.style.height = '';
+    wiring.onSendQuestion?.(question);
+  }
+  $('#chat-send')?.addEventListener('click', submitChat);
+  $('#chat-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitChat();
+    }
+  });
+  $('#chat-input')?.addEventListener('input', (e) => {
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  });
+  $('#btn-clear-chat')?.addEventListener('click', () => wiring.onClearChat?.());
 
   $('#btn-open-connection')?.addEventListener('click', () => {
     openConnectionSheet();

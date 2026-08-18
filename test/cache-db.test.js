@@ -77,7 +77,7 @@ describe('openKnowledgeDb — schema', () => {
     // The upgrade callback must create all five stores regardless of which
     // code path is exercised first.
     const names = Array.from(kb.db.objectStoreNames).sort();
-    expect(names).toEqual(['contents', 'favorites', 'manifests', 'meta', 'searchIndexes']);
+    expect(names).toEqual(['assistantMessages', 'contents', 'favorites', 'manifests', 'meta', 'searchIndexes']);
   });
 
   it('opens the mandated database name', () => {
@@ -271,5 +271,51 @@ describe('manifest round-trip', () => {
     expect(await kb.getActiveManifest()).toEqual(manifest);
     expect(await kb.getDocumentText(HASH_1)).toBe('# a');
     expect(await kb.getDocumentText(HASH_3)).toBeUndefined(); // artifact has no stored body
+  });
+});
+
+describe('assistant message history', () => {
+  it('persists and lists messages oldest first', async () => {
+    await kb.addAssistantMessage({ role: 'user', text: '你好', createdAt: '2026-01-01T00:00:00.000Z' });
+    await kb.addAssistantMessage({ role: 'assistant', text: '你好！', createdAt: '2026-01-01T00:00:01.000Z' });
+    const list = await kb.listAssistantMessages();
+    expect(list.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(list[0].text).toBe('你好');
+    expect(list[1].text).toBe('你好！');
+  });
+
+  it('assigns a unique id and a default createdAt when omitted', async () => {
+    const record = await kb.addAssistantMessage({ role: 'user', text: 'x' });
+    expect(typeof record.id).toBe('string');
+    expect(record.id.length).toBeGreaterThan(0);
+    expect(typeof record.createdAt).toBe('string');
+  });
+
+  it('rejects invalid roles and empty text (fail closed)', async () => {
+    await expect(kb.addAssistantMessage({ role: 'system', text: 'x' })).rejects.toThrow(TypeError);
+    await expect(kb.addAssistantMessage({ role: 'user', text: '   ' })).rejects.toThrow(TypeError);
+    await expect(kb.addAssistantMessage({ role: 'assistant', text: '' })).rejects.toThrow(TypeError);
+  });
+
+  it('prunes to the newest MAX_ASSISTANT_MESSAGES entries', async () => {
+    const MAX = 200;
+    for (let i = 0; i < MAX + 5; i += 1) {
+      await kb.addAssistantMessage({
+        role: 'user',
+        text: 'm' + i,
+        createdAt: `2026-01-01T00:00:00.${String(i).padStart(3, '0')}Z`,
+      });
+    }
+    const list = await kb.listAssistantMessages();
+    expect(list.length).toBe(MAX);
+    expect(list[0].text).toBe('m5');
+    expect(list[list.length - 1].text).toBe('m' + (MAX + 4));
+  });
+
+  it('clears all history', async () => {
+    await kb.addAssistantMessage({ role: 'user', text: 'a' });
+    await kb.addAssistantMessage({ role: 'assistant', text: 'b' });
+    await kb.clearAssistantMessages();
+    expect(await kb.listAssistantMessages()).toEqual([]);
   });
 });

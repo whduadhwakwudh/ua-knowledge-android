@@ -13,6 +13,8 @@
  *   searchIndexes keyPath 'revision' — serialized MiniSearch JSON per revision
  *                 (written by the sync layer; the store exists here so the
  *                 schema is stable from v1).
+ *   assistantMessages keyPath 'id' — chat history for the knowledge-base
+ *                 assistant: {id, role: 'user'|'assistant', text, createdAt}.
  *
  * commitRevision writes the manifest, the new contents and meta.activeRevision
  * in ONE transaction: any thrown write aborts the whole transaction and the
@@ -24,18 +26,26 @@
 import { openDB } from 'idb';
 
 export const DB_NAME = 'ua-knowledge';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 const META_ACTIVE_REVISION = 'activeRevision';
 const META_PREVIOUS_REVISION = 'previousRevision';
 const META_LAST_SYNC_AT = 'lastSyncAt';
 
-function upgrade(db) {
-  db.createObjectStore('meta');
-  db.createObjectStore('manifests', { keyPath: 'revision' });
-  db.createObjectStore('contents', { keyPath: 'sha256' });
-  db.createObjectStore('favorites', { keyPath: 'documentId' });
-  db.createObjectStore('searchIndexes', { keyPath: 'revision' });
+/** 对话历史保留上限：超出时删除最旧的消息。 */
+export const MAX_ASSISTANT_MESSAGES = 200;
+
+function upgrade(db, oldVersion) {
+  if (oldVersion < 1) {
+    db.createObjectStore('meta');
+    db.createObjectStore('manifests', { keyPath: 'revision' });
+    db.createObjectStore('contents', { keyPath: 'sha256' });
+    db.createObjectStore('favorites', { keyPath: 'documentId' });
+    db.createObjectStore('searchIndexes', { keyPath: 'revision' });
+  }
+  if (oldVersion < 2) {
+    db.createObjectStore('assistantMessages', { keyPath: 'id' });
+  }
 }
 
 /**
@@ -193,6 +203,51 @@ export async function openKnowledgeDb() {
     await tx.done;
   }
 
+  /* ─── assistant chat history ────────────────────────────── */
+
+  /** All assistant messages, oldest first. */
+  async function listAssistantMessages() {
+    const all = await db.transaction('assistantMessages').objectStore('assistantMessages').getAll();
+    return all.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+  }
+
+  /**
+   * Append one assistant message (role 'user' | 'assistant') and prune to the
+   * newest MAX_ASSISTANT_MESSAGES entries. Invalid records fail closed.
+   */
+  async function addAssistantMessage({ role, text, createdAt }) {
+    if (role !== 'user' && role !== 'assistant') {
+      throw new TypeError('assistant message role must be user or assistant');
+    }
+    if (typeof text !== 'string' || text.trim() === '') {
+      throw new TypeError('assistant message text must be a non-empty string');
+    }
+    const id =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const record = { id, role, text, createdAt: typeof createdAt === 'string' ? createdAt : new Date().toISOString() };
+    const tx = db.transaction('assistantMessages', 'readwrite');
+    const store = tx.objectStore('assistantMessages');
+    await store.put(record);
+    const all = await store.getAll();
+    if (all.length > MAX_ASSISTANT_MESSAGES) {
+      const excess = all
+        .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0))
+        .slice(0, all.length - MAX_ASSISTANT_MESSAGES);
+      for (const old of excess) await store.delete(old.id);
+    }
+    await tx.done;
+    return record;
+  }
+
+  /** 清空全部助手对话历史。 */
+  async function clearAssistantMessages() {
+    const tx = db.transaction('assistantMessages', 'readwrite');
+    await tx.objectStore('assistantMessages').clear();
+    await tx.done;
+  }
+
   return {
     db,
     getActiveRevision,
@@ -205,5 +260,8 @@ export async function openKnowledgeDb() {
     listFavorites,
     isFavorite,
     setFavorite,
+    listAssistantMessages,
+    addAssistantMessage,
+    clearAssistantMessages,
   };
 }

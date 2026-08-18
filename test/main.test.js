@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import 'fake-indexeddb/auto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -222,5 +222,129 @@ describe('bootstrapApp — categories and shuffle', () => {
     expect(app.state.documents.map((d) => d.relativePath)).toContain('outputs/r1.md');
     expect(container.querySelector('#category-chips').classList.contains('hidden')).toBe(true);
     expect(container.querySelector('#btn-shuffle').classList.contains('hidden')).toBe(true);
+  });
+});
+
+describe('bootstrapApp — assistant ask flow', () => {
+  const SYNC_BODY = '同步协议\n\nmanifest 指纹缓存 TTL 5 秒，任何增删改都会失效重建。';
+
+  async function seedCache() {
+    // 共享内存数据库：先清掉上个用例残留的对话历史，保证断言独立。
+    await db.clearAssistantMessages();
+    const entry = {
+      id: 'd' + '0'.repeat(42),
+      relativePath: 'wiki/同步协议.md',
+      kind: 'document',
+      mime: 'text/markdown; charset=utf-8',
+      size: SYNC_BODY.length,
+      mtime: '2026-08-18T00:00:00Z',
+      sha256: 'h' + '0'.repeat(63),
+      title: '同步协议',
+    };
+    const manifest = {
+      schemaVersion: 1,
+      generatedAt: '2026-08-18T00:00:00Z',
+      revision: 'r' + 'f'.repeat(63),
+      entries: [entry],
+    };
+    await db.commitRevision({
+      revision: manifest.revision,
+      manifest,
+      contents: [{ sha256: entry.sha256, text: SYNC_BODY }],
+    });
+  }
+
+  it('retrieves local knowledge, asks the server and persists the reply', async () => {
+    const { window } = dom;
+    const container = window.document.getElementById('screen');
+    const adapter = createWebAdapter();
+    const store = createConnectionStore(adapter);
+    await store.save({ baseUrl: VALID_BASE, token: FAKE_TOKEN });
+    await seedCache();
+
+    let askBody = null;
+    const app = await bootstrapApp({
+      container,
+      isNative: false,
+      connectionStoreImpl: store,
+      dbImpl: db,
+      randomImpl: () => 0,
+      fetchImpl: async (url, opts) => {
+        if (String(url).endsWith('/v1/ask')) {
+          askBody = JSON.parse(opts.body);
+          return new Response(JSON.stringify({ answer: '是的，指纹缓存 TTL 5 秒。' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        throw new Error('unexpected fetch: ' + String(url));
+      },
+    });
+
+    const input = container.querySelector('#chat-input');
+    input.value = '同步的缓存多久失效？';
+    container.querySelector('#chat-send').click();
+
+    await vi.waitFor(() => {
+      expect(app.state.assistantMessages.length).toBe(2);
+    });
+
+    expect(app.state.assistantMessages[0]).toMatchObject({
+      role: 'user',
+      text: '同步的缓存多久失效？',
+    });
+    expect(app.state.assistantMessages[1]).toMatchObject({
+      role: 'assistant',
+      text: '是的，指纹缓存 TTL 5 秒。',
+    });
+    expect(app.state.assistantAsking).toBe(false);
+
+    // 本地检索出知识上下文并随请求发送
+    expect(askBody).not.toBeNull();
+    expect(askBody.question).toBe('同步的缓存多久失效？');
+    expect(askBody.knowledge.length).toBeGreaterThan(0);
+    expect(askBody.knowledge[0].relativePath).toBe('wiki/同步协议.md');
+
+    // 对话历史已持久化到 IndexedDB
+    const persisted = await db.listAssistantMessages();
+    expect(persisted.length).toBe(2);
+  });
+
+  it('surfaces assistant_unavailable (503) as a toast without wedging the app', async () => {
+    const { window } = dom;
+    const container = window.document.getElementById('screen');
+    const adapter = createWebAdapter();
+    const store = createConnectionStore(adapter);
+    await store.save({ baseUrl: VALID_BASE, token: FAKE_TOKEN });
+    await seedCache();
+
+    const app = await bootstrapApp({
+      container,
+      isNative: false,
+      connectionStoreImpl: store,
+      dbImpl: db,
+      fetchImpl: async (url) => {
+        if (String(url).endsWith('/v1/ask')) {
+          return new Response(JSON.stringify({ error: 'assistant_not_configured' }), { status: 503 });
+        }
+        throw new Error('unexpected fetch: ' + String(url));
+      },
+    });
+
+    let toast = '';
+    app.ui.toast = (m) => {
+      toast = m;
+    };
+    const input = container.querySelector('#chat-input');
+    input.value = '你好';
+    container.querySelector('#chat-send').click();
+
+    await vi.waitFor(() => {
+      expect(app.state.assistantAsking).toBe(false);
+    });
+    expect(toast).toContain('助手未配置');
+    // 只保留用户消息，助手未作答
+    expect(app.state.assistantMessages.length).toBe(1);
+    expect(app.state.assistantMessages[0].role).toBe('user');
   });
 });

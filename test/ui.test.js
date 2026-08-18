@@ -76,7 +76,7 @@ function baseState(overrides = {}) {
 function mountDOM(wiringOverrides = {}) {
   const dom = new JSDOM(INDEX_HTML, { url: 'https://local.test/' });
   const container = dom.window.document.querySelector('#screen');
-  const calls = { sync: 0, open: [], fav: [], conn: [], query: [], dl: [], close: [], tab: [], cat: [], shuffle: 0 };
+  const calls = { sync: 0, open: [], fav: [], conn: [], query: [], dl: [], close: [], tab: [], cat: [], shuffle: 0, send: [], clearChat: 0 };
   const wiring = {
     onSync: () => {
       calls.sync += 1;
@@ -107,6 +107,12 @@ function mountDOM(wiringOverrides = {}) {
     },
     onShuffle: () => {
       calls.shuffle += 1;
+    },
+    onSendQuestion: (q) => {
+      calls.send.push(q);
+    },
+    onClearChat: () => {
+      calls.clearChat += 1;
     },
     ...wiringOverrides,
   };
@@ -351,6 +357,73 @@ describe('mountApp — categories and shuffle', () => {
     expect(isHidden($id(container, 'category-chips'))).toBe(false);
     ui.update(baseState({ documents: [docFixture('d1')], categories: [], category: 'all' }));
     expect(isHidden($id(container, 'category-chips'))).toBe(true);
+  });
+});
+
+describe('mountApp — assistant chat', () => {
+  it('switches to the assistant tab and shows the empty hint', () => {
+    const { container, ui, calls } = mountDOM();
+    ui.update(baseState());
+    container.querySelector('[data-tab="assistant"]').click();
+    expect(calls.tab).toEqual(['assistant']);
+    expect($id(container, 'view-assistant').classList.contains('active')).toBe(true);
+    expect(isHidden($id(container, 'chat-empty-wrap'))).toBe(false);
+  });
+
+  it('renders user and assistant bubbles from history (markdown-rendered answer)', () => {
+    const { container, ui } = mountDOM();
+    ui.update(
+      baseState({
+        assistantMessages: [
+          { role: 'user', text: '怎么同步？', createdAt: '2026-01-01T00:00:00.000Z' },
+          { role: 'assistant', text: '点**立即同步**即可。', createdAt: '2026-01-01T00:00:01.000Z' },
+        ],
+      }),
+    );
+    container.querySelector('[data-tab="assistant"]').click();
+    expect(isHidden($id(container, 'chat-empty-wrap'))).toBe(true);
+    expect(container.querySelector('.chat-msg.user').textContent).toContain('怎么同步？');
+    expect(container.querySelector('.chat-msg.assistant strong').textContent).toBe('立即同步');
+  });
+
+  it('sending a question fires onSendQuestion with the trimmed text and clears the input', () => {
+    const { container, ui, calls } = mountDOM();
+    ui.update(baseState());
+    const input = $id(container, 'chat-input');
+    input.value = '  问题  ';
+    $id(container, 'chat-send').click();
+    expect(calls.send).toEqual(['问题']);
+    expect(input.value).toBe('');
+  });
+
+  it('Enter sends the question; Shift+Enter does not', () => {
+    const { container, ui, calls } = mountDOM();
+    ui.update(baseState());
+    const input = $id(container, 'chat-input');
+    input.value = 'a';
+    input.dispatchEvent(new container.ownerDocument.defaultView.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(calls.send).toEqual(['a']);
+    input.value = 'b';
+    input.dispatchEvent(
+      new container.ownerDocument.defaultView.KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }),
+    );
+    expect(calls.send).toEqual(['a']);
+  });
+
+  it('shows the typing indicator and disables the input while asking', () => {
+    const { container, ui } = mountDOM();
+    ui.update(baseState({ assistantAsking: true }));
+    container.querySelector('[data-tab="assistant"]').click();
+    expect(container.querySelector('.chat-msg.typing')).toBeTruthy();
+    expect($id(container, 'chat-input').disabled).toBe(true);
+    expect($id(container, 'chat-send').disabled).toBe(true);
+  });
+
+  it('clear chat button fires onClearChat', () => {
+    const { container, ui, calls } = mountDOM();
+    ui.update(baseState({ assistantMessages: [{ role: 'user', text: 'x' }] }));
+    $id(container, 'btn-clear-chat').click();
+    expect(calls.clearChat).toBe(1);
   });
 });
 

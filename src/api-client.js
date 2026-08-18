@@ -39,6 +39,10 @@ export class ApiError extends Error {
   static NOT_FOUND = 'NOT_FOUND';
   /** Client-visible request rejection (other 4xx that is not a mapped case). */
   static REQUEST = 'REQUEST';
+  /** 智能助手未配置（服务端 503，无 LLM key）。 */
+  static ASSISTANT_UNAVAILABLE = 'ASSISTANT_UNAVAILABLE';
+  /** 智能助手上游超时（服务端 504）。 */
+  static ASSISTANT_TIMEOUT = 'ASSISTANT_TIMEOUT';
 
   constructor(code, message, { status = null, retryAfterSeconds = null } = {}) {
     super(message);
@@ -269,7 +273,7 @@ export function createApiClient({
     }
   }
 
-  async function request(pathname, { headers } = {}) {
+  async function request(pathname, { method = 'GET', headers, body, allowedStatuses = [] } = {}) {
     let res;
     // Timeout guard: a request that neither completes nor errors (black-hole
     // route, stalled server) must not hold `sync()` in the download phase
@@ -286,8 +290,9 @@ export function createApiClient({
     try {
       res = await Promise.race([
         fetchImpl(origin + pathname, {
-          method: 'GET',
+          method,
           headers,
+          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
           ...(controller ? { signal: controller.signal } : {}),
         }),
         timeout,
@@ -301,6 +306,9 @@ export function createApiClient({
       if (timer) clearTimeout(timer);
     }
     if (res.status === 304) return res;
+    // Callers may opt out of the standard status mapping for a specific set
+    // of statuses they handle themselves (e.g. /v1/ask 503/504).
+    if (allowedStatuses.includes(res.status)) return res;
     throwForStatus(res);
     return res;
   }
@@ -396,5 +404,46 @@ export function createApiClient({
     return `${origin}/v1/artifacts/${encodeURIComponent(id)}`;
   }
 
-  return { health, getManifest, getDocument, artifactUrl };
+  /** Ask response cap — generous (a 2k-token answer ≈ tens of KB), still bounded. */
+  const ASK_ANSWER_MAX_BYTES = 512 * 1024; // 512 KiB
+
+  /**
+   * Ask the knowledge-base assistant. `knowledge` is the client-side retrieved
+   * context (title/excerpt/relativePath chunks from the local cache); the
+   * server composes the prompt and calls the LLM provider, and the plaintext
+   * provider key never leaves the server.
+   */
+  async function askQuestion(question, knowledge = []) {
+    const res = await request('/v1/ask', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: { question, knowledge },
+      allowedStatuses: [503, 504],
+    });
+    if (res.status === 503) {
+      throw new ApiError(ApiError.ASSISTANT_UNAVAILABLE, 'assistant not configured', { status: 503 });
+    }
+    if (res.status === 504) {
+      throw new ApiError(ApiError.ASSISTANT_TIMEOUT, 'assistant timed out', { status: 504 });
+    }
+    const contentLengthHeader = res.headers.get('content-length');
+    if (contentLengthHeader !== null && contentLengthHeader !== '') {
+      const declared = Number(contentLengthHeader);
+      if (Number.isSafeInteger(declared) && declared > ASK_ANSWER_MAX_BYTES) {
+        throw new ApiError(ApiError.INTEGRITY, 'assistant answer exceeds the size limit');
+      }
+    }
+    let payload;
+    try {
+      payload = await res.json();
+    } catch {
+      throw new ApiError(ApiError.SCHEMA, 'invalid ask response');
+    }
+    if (!isObject(payload) || typeof payload.answer !== 'string' || payload.answer.trim() === '') {
+      throw new ApiError(ApiError.SCHEMA, 'invalid ask response');
+    }
+    return { answer: payload.answer };
+  }
+
+  return { health, getManifest, getDocument, artifactUrl, askQuestion };
 }

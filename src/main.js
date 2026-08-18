@@ -62,6 +62,9 @@ function blankRuntimeState() {
     category: 'all',
     categories: [],
     allDocuments: [],
+    // 智能助手：对话历史（本地 IndexedDB）与提问状态。
+    assistantMessages: [],
+    assistantAsking: false,
   };
 }
 
@@ -90,6 +93,20 @@ function excerptOf(text) {
 function topDirOf(relativePath) {
   const slash = relativePath.indexOf('/');
   return slash > 0 ? relativePath.slice(0, slash) : relativePath;
+}
+
+/**
+ * 知识片段摘要：去掉 frontmatter 与 markdown 符号，取正文开头一段纯文本，
+ * 作为智能助手的检索上下文（服务端限 1000 字符/条）。
+ */
+function knowledgeSnippet(text, max = 600) {
+  if (!text) return '';
+  const body = text.replace(/^---[\s\S]*?---\r?\n/, '');
+  const cleaned = body
+    .replace(/[#*_`>[\]]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.length > max ? cleaned.slice(0, max) + '…' : cleaned;
 }
 
 function humanDate(iso) {
@@ -253,6 +270,12 @@ export async function bootstrapApp(options = {}) {
     state.allDocuments = docs;
     state.documents = visibleDocuments();
     state.artifacts = arts;
+    // 对话历史在内容刷新时保持（本地 IndexedDB，与远端同步无关）。
+    try {
+      state.assistantMessages = await db.listAssistantMessages();
+    } catch {
+      state.assistantMessages = state.assistantMessages ?? [];
+    }
   }
 
   function applySearch(query) {
@@ -412,6 +435,8 @@ export async function bootstrapApp(options = {}) {
     state.category = 'all';
     state.categories = [];
     state.allDocuments = [];
+    state.assistantMessages = [];
+    state.assistantAsking = false;
     allDocuments = [];
     allArtifacts = [];
     docById = new Map();
@@ -468,6 +493,84 @@ export async function bootstrapApp(options = {}) {
     }
   }
 
+  /* ─── assistant（知识库增强问答） ───────────────────────── */
+  /** 本地检索与问题最相关的文档片段，作为助手的知识上下文。 */
+  function retrieveKnowledge(question, limit = 5) {
+    if (!search) return [];
+    return search
+      .query(question)
+      .slice(0, limit)
+      .map((hit) => {
+        const doc = docById.get(hit.id);
+        if (!doc) return null;
+        return {
+          title: doc.title,
+          excerpt: knowledgeSnippet(doc.text ?? ''),
+          relativePath: doc.relativePath,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  async function sendQuestion(question) {
+    const trimmed = (question ?? '').trim();
+    if (!trimmed) return;
+    if (state.assistantAsking) return;
+    if (!api) {
+      ui.toast('请先完成连接设置');
+      ui.openConnectionSheet();
+      return;
+    }
+    const userMsg = { role: 'user', text: trimmed, createdAt: new Date().toISOString() };
+    state.assistantMessages = [...(state.assistantMessages ?? []), userMsg];
+    state.assistantAsking = true;
+    try {
+      await db.addAssistantMessage(userMsg);
+    } catch {
+      // 历史写入失败不阻塞问答。
+    }
+    ui.update(state);
+    try {
+      const knowledge = retrieveKnowledge(trimmed);
+      const { answer } = await api.askQuestion(trimmed, knowledge);
+      const reply = { role: 'assistant', text: answer, createdAt: new Date().toISOString() };
+      state.assistantMessages = [...state.assistantMessages, reply];
+      try {
+        await db.addAssistantMessage(reply);
+      } catch {
+        // 同上。
+      }
+    } catch (err) {
+      if (err && err.code === ApiError.ASSISTANT_UNAVAILABLE) {
+        ui.toast('助手未配置，请稍后再试');
+      } else if (err && err.code === ApiError.ASSISTANT_TIMEOUT) {
+        ui.toast('回答超时，请重试');
+      } else if (err && err.code === ApiError.UNAUTHORIZED) {
+        state.connection = 'auth-error';
+        ui.toast('认证失败，请重新连接');
+      } else if (err && err.code === ApiError.NETWORK) {
+        ui.toast('网络不可达，请稍后重试');
+      } else if (err && err.code === ApiError.RATE_LIMITED) {
+        ui.toast('提问太频繁，请稍后再试');
+      } else {
+        ui.toast('回答失败，请稍后重试');
+      }
+    } finally {
+      state.assistantAsking = false;
+      ui.update(state);
+    }
+  }
+
+  async function clearChat() {
+    state.assistantMessages = [];
+    try {
+      await db.clearAssistantMessages();
+    } catch {
+      // 清空失败不影响界面状态。
+    }
+    ui.update(state);
+  }
+
   /* ─── mount ─────────────────────────────────────────────── */
   const ui = mountApp(container, {
     onSync: () => {
@@ -506,6 +609,12 @@ export async function bootstrapApp(options = {}) {
     },
     onCloseDetail: () => {
       state.detail = null;
+    },
+    onSendQuestion: (question) => {
+      sendQuestion(question);
+    },
+    onClearChat: () => {
+      clearChat();
     },
   });
 
