@@ -254,6 +254,13 @@
     .topbar-title { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: center; }
     .topbar-title .greeting { margin: 0 0 2px; }
     .topbar-name { font-size: 20px !important; letter-spacing: -0.02em; }
+    /* 顶栏标题严格居中（如助手页只有右侧按钮时） */
+    .topbar-center { position: relative; justify-content: flex-end; }
+    .topbar-center .topbar-title {
+      position: absolute; left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      width: 100%; pointer-events: none;
+    }
 
     /* note cards（Obsidian 文件列表行） */
     .note-list { display: flex; flex-direction: column; gap: 1px; }
@@ -940,7 +947,7 @@
                 <button class="setting-row" id="setting-about" data-od-id="setting-about">
                   <span class="set-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><circle cx="12" cy="7.6" r="0.7"/></svg></span>
                   <span class="set-label">关于</span>
-                  <span class="set-sub">UA 1.4.0</span>
+                  <span class="set-sub">UA 1.4.1</span>
                   <svg class="chevron" viewBox="0 0 24 24" aria-hidden><path d="M9 5.5 15.5 12 9 18.5"/></svg>
                 </button>
               </div>
@@ -949,7 +956,7 @@
 
           <!-- ═══ 智能助手 ═══ -->
           <main class="content view" id="view-assistant" data-od-id="view-assistant" aria-hidden="true">
-            <div class="header topbar">
+            <div class="header topbar topbar-center">
               <div class="topbar-title">
                 <p class="greeting">知识库问答</p>
                 <h1 class="topbar-name">智能助手</h1>
@@ -1087,12 +1094,10 @@
             <span class="grabber" aria-hidden="true"></span>
             <div class="about-mark">U</div>
             <h2 class="sheet-title" id="sheet-about-title" style="text-align:center;">UA</h2>
-            <p class="sheet-sub meta" style="text-align:center;">版本 1.4.0</p>
+            <p class="sheet-sub meta" style="text-align:center;">版本 1.4.1</p>
             <p class="about-line">随手记录 · 随时检索 · 收藏沉淀</p>
             <p class="about-text meta">个人知识库的移动端入口。数据本地优先，支持多端同步。</p>
-            <div class="sheet-actions">
-              <button class="btn-primary" id="about-done">完成</button>
-            </div>
+            <p class="meta" style="text-align:center; margin-top: 14px;">点击上方空白或返回键关闭</p>
           </section>
         </div>
 

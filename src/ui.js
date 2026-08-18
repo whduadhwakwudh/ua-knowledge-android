@@ -703,7 +703,6 @@ export function mountApp(container, wiring = {}) {
     });
   });
   $('#setting-about')?.addEventListener('click', () => openSheet('sheet-about'));
-  $('#about-done')?.addEventListener('click', closeSheets);
 
   $('#conn-test')?.addEventListener('click', () => submitConnection('test'));
   $('#conn-save')?.addEventListener('click', () => submitConnection('save'));

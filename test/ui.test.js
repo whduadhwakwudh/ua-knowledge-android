@@ -367,6 +367,8 @@ describe('mountApp — assistant chat', () => {
     container.querySelector('[data-tab="assistant"]').click();
     expect(calls.tab).toEqual(['assistant']);
     expect($id(container, 'view-assistant').classList.contains('active')).toBe(true);
+    // 顶栏标题严格居中（topbar-center），右侧仅新建对话按钮。
+    expect($id(container, 'view-assistant').querySelector('.topbar-center .topbar-title')).toBeTruthy();
     expect(isHidden($id(container, 'chat-empty-wrap'))).toBe(false);
   });
 
@@ -726,12 +728,14 @@ describe('mountApp — tabs, theme, sheets and toast', () => {
     expect($id(container, 'set-appearance-sub').textContent).toBe('深色');
   });
 
-  it('opens and closes the about sheet', () => {
+  it('opens the about sheet and closes it via the scrim (no 完成 button)', () => {
     const { container, ui } = mountDOM();
     ui.update(baseState());
     $id(container, 'setting-about').click();
     expect($id(container, 'sheet-about').classList.contains('open')).toBe(true);
-    $id(container, 'about-done').click();
+    // 完成按钮已移除：只能通过 scrim / 返回键关闭。
+    expect($id(container, 'about-done')).toBeNull();
+    $id(container, 'scrim').click();
     expect($id(container, 'sheet-layer').classList.contains('open')).toBe(false);
   });
 
