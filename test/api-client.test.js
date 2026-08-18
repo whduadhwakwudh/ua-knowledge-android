@@ -243,6 +243,9 @@ describe('getManifest()', () => {
       { relativePath: 'wiki/sub/deep/note.md', kind: 'document', mime: 'text/markdown; charset=utf-8' },
       { relativePath: 'outputs/report.md', kind: 'document', mime: 'text/markdown; charset=utf-8' },
       { relativePath: 'outputs/app.apk', kind: 'artifact', mime: 'application/vnd.android.package-archive' },
+      // raw/ 证据层自 1.4.0 起加入同步（服务端 RULES 镜像）。
+      { relativePath: 'raw/S001-example.md', kind: 'document', mime: 'text/markdown; charset=utf-8' },
+      { relativePath: 'raw/github/S007-note.md', kind: 'document', mime: 'text/markdown; charset=utf-8' },
       // Cross-repo contract: extensions match case-insensitively, the original
       // relativePath is preserved verbatim, and the kind MIME stays exact.
       { relativePath: 'outputs/Report.MD', kind: 'document', mime: 'text/markdown; charset=utf-8' },
@@ -363,7 +366,6 @@ describe('getManifest()', () => {
       '../../etc/passwd',
       '/abs/path.md',
       'a\\b.md',
-      'raw/secret.md',
       'books/x.md',
       'wiki/x.txt',
       'wiki/x.apk',
@@ -901,6 +903,10 @@ describe('askQuestion()', () => {
     expect(result.answer).toBe('知识库在 wiki/ 下。');
     expect(captured.url).toBe(`${BASE}/v1/ask`);
     expect(captured.opts.method).toBe('POST');
+    // 回归：缺失 Content-Type 会让 Fastify 无法解析 JSON body（415/400）。
+    const headerEntries = Object.keys(captured.opts.headers).map((k) => k.toLowerCase());
+    expect(headerEntries).toContain('content-type');
+    expect(captured.opts.headers['content-type'] ?? captured.opts.headers['Content-Type']).toContain('application/json');
     expect(JSON.parse(captured.opts.body)).toEqual({ question: '知识库在哪？', knowledge });
     expect(authHeaderEntries(captured.opts).length).toBe(1);
   });

@@ -568,6 +568,7 @@ export async function bootstrapApp(options = {}) {
     } catch {
       // 清空失败不影响界面状态。
     }
+    ui.toast('已新建对话');
     ui.update(state);
   }
 

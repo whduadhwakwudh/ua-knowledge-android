@@ -108,17 +108,22 @@ function daysInMonth(year, month) {
 }
 
 /**
- * Server allowlist mirror (manifest.ts RULES): the path prefix `wiki/` or
- * `outputs/` must match case-sensitively (the server uses startsWith on the
- * exact prefix), while the file extension matches case-insensitively (the
- * server lowercases the extension). This mirrors the server exactly, so a
- * hostile server emitting `WIKI/x.md` is rejected here just as the real
- * server would never emit it.
+ * Server allowlist mirror (manifest.ts RULES + path-policy.ts): the path
+ * prefix `wiki/`, `outputs/` or `raw/` must match case-sensitively (the
+ * server uses startsWith on the exact prefix), while the file extension
+ * matches case-insensitively (the server lowercases the extension). This
+ * mirrors the server exactly, so a hostile server emitting `WIKI/x.md` is
+ * rejected here just as the real server would never emit it.
  */
-const ALLOWLISTED_PATH_PATTERNS = [/^wiki\/.+\.md$/i, /^outputs\/.+\.md$/i, /^outputs\/.+\.apk$/i];
+const ALLOWLISTED_PATH_PATTERNS = [
+  /^wiki\/.+\.md$/i,
+  /^outputs\/.+\.md$/i,
+  /^outputs\/.+\.apk$/i,
+  /^raw\/.+\.md$/i,
+];
 
 function isAllowlistedPath(p) {
-  if (!/^(wiki|outputs)\//.test(p)) return false;
+  if (!/^(wiki|outputs|raw)\//.test(p)) return false;
   return ALLOWLISTED_PATH_PATTERNS.some((re) => re.test(p));
 }
 
@@ -416,7 +421,8 @@ export function createApiClient({
   async function askQuestion(question, knowledge = []) {
     const res = await request('/v1/ask', {
       method: 'POST',
-      headers: authHeaders(),
+      // Fastify 只解析带 Content-Type: application/json 的 body——缺失会 400/415。
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       body: { question, knowledge },
       allowedStatuses: [503, 504],
     });

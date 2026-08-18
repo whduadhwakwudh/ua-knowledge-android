@@ -419,7 +419,7 @@ describe('mountApp — assistant chat', () => {
     expect($id(container, 'chat-send').disabled).toBe(true);
   });
 
-  it('clear chat button fires onClearChat', () => {
+  it('new-chat button (top bar) fires onClearChat', () => {
     const { container, ui, calls } = mountDOM();
     ui.update(baseState({ assistantMessages: [{ role: 'user', text: 'x' }] }));
     $id(container, 'btn-clear-chat').click();
