@@ -558,6 +558,36 @@ describe('mountApp — documents and favorites', () => {
     expect($id(container, 'detail-chips').textContent).toContain('wiki');
   });
 
+  it('renders backlinks in the detail view and opens them on click', () => {
+    const { container, ui, calls } = mountDOM();
+    ui.update(
+      baseState({
+        detail: {
+          id: 'd1',
+          title: '第一篇',
+          chips: [],
+          html: '<p>x</p>',
+          backlinks: [
+            { id: 'd2', title: '引用者A' },
+            { id: 'd3', title: '引用者B' },
+          ],
+        },
+      }),
+    );
+    expect(isHidden($id(container, 'detail-backlinks'))).toBe(false);
+    expect($id(container, 'detail-backlinks').textContent).toContain('引用者A');
+    expect($id(container, 'detail-backlinks').textContent).toContain('引用者B');
+    expect($id(container, 'detail-backlinks').textContent).toContain('2 篇');
+    container.querySelector('#detail-backlinks [data-open="d2"]').click();
+    expect(calls.open).toEqual(['d2']);
+  });
+
+  it('hides the backlinks section when there are none', () => {
+    const { container, ui } = mountDOM();
+    ui.update(baseState({ detail: { id: 'd1', title: 't', chips: [], html: '<p>x</p>' } }));
+    expect(isHidden($id(container, 'detail-backlinks'))).toBe(true);
+  });
+
   it('back closes the detail and fires onCloseDetail', () => {
     const { container, ui, calls } = mountDOM();
     ui.update(baseState({ detail: { id: 'd1', title: 't', chips: [], html: '<p>x</p>' } }));

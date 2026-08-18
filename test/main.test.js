@@ -504,4 +504,62 @@ describe('bootstrapApp — Obsidian wiki links', () => {
     // 停留在当前笔记。
     expect(app.state.detail.id).toBe('d' + '0'.repeat(42));
   });
+
+  it('shows backlinks (which notes reference the current one) and jumps on tap', async () => {
+    const { window } = dom;
+    const container = window.document.getElementById('screen');
+    const adapter = createWebAdapter();
+    const store = createConnectionStore(adapter);
+    await store.save({ baseUrl: VALID_BASE, token: FAKE_TOKEN });
+
+    // A 引用 B；C 也引用 B → B 的反向链接应有 A 和 C。
+    const bodies = ['# 甲\n\n见 [[乙]]。', '# 乙\n\n正文。', '# 丙\n\n参见 [[乙]] 与 [[丁]]。'];
+    const paths = ['wiki/甲.md', 'wiki/乙.md', 'wiki/丙.md'];
+    const entries = paths.map((relativePath, i) => ({
+      id: 'd' + String(i).padStart(42, '0'),
+      relativePath,
+      kind: 'document',
+      mime: 'text/markdown; charset=utf-8',
+      size: bodies[i].length,
+      mtime: '2026-08-18T00:00:00Z',
+      sha256: 'h' + String(i).padStart(63, '0'),
+      title: relativePath.split('/')[1].replace('.md', ''),
+    }));
+    const manifest = {
+      schemaVersion: 1,
+      generatedAt: '2026-08-18T00:00:00Z',
+      revision: 'r' + 'c'.repeat(63),
+      entries,
+    };
+    await db.commitRevision({
+      revision: manifest.revision,
+      manifest,
+      contents: entries.map((e, i) => ({ sha256: e.sha256, text: bodies[i] })),
+    });
+
+    const app = await bootstrapApp({
+      container,
+      isNative: false,
+      connectionStoreImpl: store,
+      dbImpl: db,
+      randomImpl: () => 0,
+      fetchImpl: async () => {
+        throw new Error('no network');
+      },
+    });
+
+    // 打开「乙」：反向链接应包含「甲」和「丙」。
+    const idB = 'd' + '1'.padStart(42, '0');
+    const idC = 'd' + '2'.padStart(42, '0');
+    container.querySelector('[data-open="' + idB + '"]').click();
+    await vi.waitFor(() => expect(app.state.detail?.id).toBe(idB));
+    expect(app.state.detail.backlinks.map((b) => b.id).sort()).toEqual([idB.replace('1', '0'), idC].sort());
+    const blText = container.querySelector('#detail-backlinks').textContent;
+    expect(blText).toContain('甲');
+    expect(blText).toContain('丙');
+
+    // 点击反向链接「丙」→ 跳转。
+    container.querySelector('#detail-backlinks [data-open="' + idC + '"]').click();
+    await vi.waitFor(() => expect(app.state.detail?.id).toBe(idC));
+  });
 });

@@ -548,6 +548,7 @@ export function mountApp(container, wiring = {}) {
     if (!detail) {
       screen.classList.remove('detail-open');
       if ($('#view-detail')) $('#view-detail').setAttribute('aria-hidden', 'true');
+      toggleHidden($('#detail-backlinks'), true);
       currentDetailId = null;
       return;
     }
@@ -559,6 +560,37 @@ export function mountApp(container, wiring = {}) {
         .join('');
     }
     if ($('#detail-body')) $('#detail-body').innerHTML = detail.html ?? '';
+    // 反向链接：引用当前笔记的其他笔记，点击可跳转（复用 data-open 委托）。
+    const backlinks = detail.backlinks ?? [];
+    const bl = $('#detail-backlinks');
+    if (bl) {
+      if (backlinks.length > 0) {
+        bl.innerHTML =
+          '<div class="section-head row-between" style="margin-bottom: 8px;">' +
+          '<h2>反向链接</h2>' +
+          '<span class="meta num">' +
+          backlinks.length +
+          ' 篇</span></div>' +
+          '<div class="grouped">' +
+          backlinks
+            .map(
+              (b) =>
+                '<div class="list-row"><div class="body" data-open="' +
+                esc(b.id) +
+                '" role="button" tabindex="0" aria-label="打开笔记：' +
+                esc(b.title) +
+                '"><div class="title">' +
+                esc(b.title) +
+                '</div><div class="sub">引用了本篇笔记</div></div></div>',
+            )
+            .join('') +
+          '</div>';
+        bl.classList.remove(HIDDEN);
+      } else {
+        bl.classList.add(HIDDEN);
+        bl.innerHTML = '';
+      }
+    }
     const star = $('#detail-star');
     if (star) {
       const on = (state.favorites ?? []).includes(detail.id);

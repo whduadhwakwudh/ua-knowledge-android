@@ -197,6 +197,8 @@ export async function bootstrapApp(options = {}) {
   let artifactById = new Map();
   /** Obsidian 双链目标名（文件名去扩展 / title）→ 文档 id。 */
   let wikiTargets = new Map();
+  /** 反向链接：双链目标名 → 引用该目标的文档 [{id, title}]。 */
+  let backlinkIndex = new Map();
 
   /* ─── content loading ───────────────────────────────────── */
   /** 当前应展示的文档列表：搜索态按相关度，浏览态按分类过滤 + 随机洗牌。 */
@@ -259,6 +261,21 @@ export async function bootstrapApp(options = {}) {
       if (d.title && !nextWikiTargets.has(d.title)) nextWikiTargets.set(d.title, d.id);
     }
     wikiTargets = nextWikiTargets;
+
+    // 反向链接索引：遍历每篇文档正文里的 [[双链]]，记录「谁引用了谁」。
+    const nextBacklinks = new Map();
+    const WIKI_LINK_RE = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
+    for (const d of docs) {
+      const text = d.text ?? '';
+      for (const m of String(text).matchAll(WIKI_LINK_RE)) {
+        const target = m[1].trim();
+        if (!target) continue;
+        if (!nextBacklinks.has(target)) nextBacklinks.set(target, []);
+        const refs = nextBacklinks.get(target);
+        if (!refs.some((x) => x.id === d.id)) refs.push({ id: d.id, title: d.title });
+      }
+    }
+    backlinkIndex = nextBacklinks;
 
     // 分类：有文档的顶层目录，wiki/outputs 优先，其余按名称排序。
     const categories = [];
@@ -380,11 +397,24 @@ export async function bootstrapApp(options = {}) {
     } catch {
       html = '<p>内容读取失败，请重新同步后再试。</p>';
     }
+    // 反向链接：以当前笔记的「文件名去扩展」和 title 为目标名，找引用它的文档。
+    const base = String(doc.relativePath).split('/').pop().replace(/\.[^.]+$/, '');
+    const refs = [];
+    const seen = new Set();
+    for (const key of [base, doc.title]) {
+      for (const ref of backlinkIndex.get(key) ?? []) {
+        if (ref.id !== id && !seen.has(ref.id)) {
+          seen.add(ref.id);
+          refs.push(ref);
+        }
+      }
+    }
     state.detail = {
       id: doc.id,
       title: doc.title,
       chips: [doc.label, '更新于 ' + doc.updated, friendlySize(doc.size)],
       html,
+      backlinks: refs,
     };
     ui.update(state);
   }
@@ -480,6 +510,7 @@ export async function bootstrapApp(options = {}) {
     docById = new Map();
     artifactById = new Map();
     wikiTargets = new Map();
+    backlinkIndex = new Map();
     search = null;
     api = null;
     engine = null;
