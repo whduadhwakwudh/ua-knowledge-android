@@ -477,6 +477,12 @@
     .detail-body pre code { background: none; padding: 0; font-size: calc(12.5px * var(--read-scale, 1)); line-height: 1.6; }
     .detail-body a { color: var(--accent-text); text-decoration: none; }
     .detail-body a:hover { text-decoration: underline; }
+    /* Obsidian 双链：可点击跳转到对应笔记 */
+    .detail-body a.wiki-link {
+      border-bottom: 1px dashed color-mix(in oklch, var(--accent) 50%, transparent);
+      cursor: pointer;
+    }
+    .detail-body a.wiki-link:hover { text-decoration: none; border-bottom-style: solid; }
     .detail-body hr { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
     .detail-body table { border-collapse: collapse; margin: 0 0 14px; width: 100%; font-size: calc(13.5px * var(--read-scale, 1)); }
     .detail-body th, .detail-body td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; }
@@ -947,7 +953,7 @@
                 <button class="setting-row" id="setting-about" data-od-id="setting-about">
                   <span class="set-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><circle cx="12" cy="7.6" r="0.7"/></svg></span>
                   <span class="set-label">关于</span>
-                  <span class="set-sub">UA 1.5.0</span>
+                  <span class="set-sub">UA 1.5.1</span>
                   <svg class="chevron" viewBox="0 0 24 24" aria-hidden><path d="M9 5.5 15.5 12 9 18.5"/></svg>
                 </button>
               </div>
@@ -1100,7 +1106,7 @@
             <span class="grabber" aria-hidden="true"></span>
             <div class="about-mark">U</div>
             <h2 class="sheet-title" id="sheet-about-title" style="text-align:center;">UA</h2>
-            <p class="sheet-sub meta" style="text-align:center;">版本 1.5.0</p>
+            <p class="sheet-sub meta" style="text-align:center;">版本 1.5.1</p>
             <p class="about-line">随手记录 · 随时检索 · 收藏沉淀</p>
             <p class="about-text meta">个人知识库的移动端入口。数据本地优先，支持多端同步。</p>
             <p class="meta" style="text-align:center; margin-top: 14px;">点击上方空白或返回键关闭</p>

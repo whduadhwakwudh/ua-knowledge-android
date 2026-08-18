@@ -48,7 +48,18 @@ const ALLOWED_TAGS = [
   'del',
 ];
 
-const ALLOWED_ATTRS = ['href', 'title', 'alt', 'src'];
+const ALLOWED_ATTRS = ['href', 'title', 'alt', 'src', 'class', 'data-wiki-target'];
+
+/**
+ * Obsidian 双链 `[[目标]]` / `[[目标|显示文本]]` → 可点击跳转链接。
+ * 在 marked 之前替换（marked 保留内联 HTML，DOMPurify 再消毒）。
+ * 目标名与显示文本均 HTML 转义；href 用 #wiki: 片段（相对引用，通过 URL 策略）。
+ */
+const WIKI_LINK_RE = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+
+function escHtmlAttr(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 
 /**
  * URL policy: only http(s) URLs and relative references survive; javascript:,
@@ -70,11 +81,24 @@ function isSafeUrl(value) {
 }
 
 export function renderMarkdown(markdown) {
-  const raw = marked.parse(markdown, { gfm: true, breaks: false }) ?? '';
+  const withWikiLinks = String(markdown ?? '').replace(WIKI_LINK_RE, (_m, target, label) => {
+    const safeTarget = target.trim();
+    const safeLabel = (label ?? target).trim() || safeTarget;
+    return (
+      '<a href="#wiki:' +
+      encodeURIComponent(safeTarget) +
+      '" class="wiki-link" data-wiki-target="' +
+      escHtmlAttr(safeTarget) +
+      '">' +
+      escHtmlAttr(safeLabel) +
+      '</a>'
+    );
+  });
+  const raw = marked.parse(withWikiLinks, { gfm: true, breaks: false }) ?? '';
   const sanitized = DOMPurify.sanitize(raw, {
     ALLOWED_TAGS,
     ALLOWED_ATTR: ALLOWED_ATTRS,
-    ALLOW_DATA_ATTR: false,
+    ALLOW_DATA_ATTR: ['data-wiki-target'],
   });
 
   // Enforce the URL policy and harden links after sanitization. Only http(s)

@@ -805,6 +805,11 @@ export function mountApp(container, wiring = {}) {
   $('#scrim')?.addEventListener('click', closeSheets);
 
   container.addEventListener('click', (e) => {
+    const wikiLink = e.target.closest('[data-wiki-target]');
+    if (wikiLink) {
+      wiring.onOpenWikiLink?.(wikiLink.getAttribute('data-wiki-target'));
+      return;
+    }
     const category = e.target.closest('[data-category]');
     if (category) {
       closeSidebar();

@@ -11,7 +11,8 @@ describe('renderMarkdown — rendering', () => {
     expect(html).toContain('<li>two</li>');
     // Language classes are stripped by the sanitizer (class is not an allowed
     // attribute), but the fenced code block itself renders fine.
-    expect(html).toContain('<pre><code>const x = 1;');
+    expect(html).toContain('<pre><code');
+    expect(html).toContain('const x = 1;');
     expect(html).toContain('<table>');
     expect(html).toContain('<th>a</th>');
     expect(html).toContain('<td>1</td>');
@@ -34,12 +35,13 @@ describe('renderMarkdown — XSS neutralization', () => {
     expect(html).toContain('<p>safe</p>');
   });
 
-  it('strips non-allowlisted attributes such as class, id, and style', () => {
+  it('strips non-allowlisted attributes such as id and style, but keeps class for wiki links', () => {
     const html = renderMarkdown('<span class="danger" id="x" style="color:red">v</span>');
-    expect(html).not.toContain('class=');
+    // class 已允许（用于 .wiki-link 双链样式）；id/style 仍剥离。
+    expect(html).toContain('class="danger"');
     expect(html).not.toContain('id=');
     expect(html).not.toContain('style=');
-    expect(html).toContain('<span>v</span>');
+    expect(html).toContain('<span class="danger">v</span>');
   });
 
   it('neutralizes javascript: links', () => {
@@ -108,5 +110,42 @@ describe('renderMarkdown — link attributes', () => {
     expect(html).not.toContain('data:text/html');
     expect(html).not.toContain('mailto:');
     expect(html).not.toMatch(/<a[^>]+href/i);
+  });
+});
+
+describe('renderMarkdown — Obsidian 双链', () => {
+  it('turns [[目标]] into a clickable wiki link with the target preserved', () => {
+    const html = renderMarkdown('见 [[知识库运行协议]] 的说明。');
+    expect(html).toContain('class="wiki-link"');
+    expect(html).toContain('data-wiki-target="知识库运行协议"');
+    expect(html).toContain('href="#wiki:');
+    expect(html).toContain('>知识库运行协议</a>');
+  });
+
+  it('supports the alias form [[目标|显示文本]]', () => {
+    const html = renderMarkdown('参考 [[UA知识库Android APK构建记录|构建记录]]。');
+    expect(html).toContain('data-wiki-target="UA知识库Android APK构建记录"');
+    expect(html).toContain('>构建记录</a>');
+  });
+
+  it('keeps injected markup trapped inside the attribute value (no element escapes)', () => {
+    const html = renderMarkdown('[[<img src=x onerror=alert(1)>|<b>粗</b>]]');
+    // 目标字符串可能以字面量形式出现在 data-wiki-target 属性值里（DOMPurify
+    // 会解码实体），但属性值上下文不会形成元素，onerror 不可执行。
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    expect(doc.querySelector('img')).toBeNull();
+    expect(doc.querySelector('b')).toBeNull();
+    expect(doc.querySelector('.wiki-link')).toBeTruthy();
+    // label 的 <b> 只作为文本内容存在（不是元素）。
+    expect(doc.querySelector('.wiki-link').textContent).toContain('粗');
+    expect(doc.querySelector('.wiki-link').textContent).toContain('<b>');
+    expect(doc.querySelector('.wiki-link').getAttribute('data-wiki-target')).toContain('<img');
+  });
+
+  it('keeps ordinary markdown links untouched', () => {
+    const html = renderMarkdown('[普通链接](https://example.com) [[内部笔记]]');
+    expect(html).toContain('href="https://example.com"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('wiki-link');
   });
 });

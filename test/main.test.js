@@ -393,3 +393,115 @@ describe('bootstrapApp — assistant ask flow', () => {
     expect(transportCall.messages[1].content).toContain('wiki/同步协议.md');
   });
 });
+
+describe('bootstrapApp — Obsidian wiki links', () => {
+  it('navigates between notes by clicking a [[双链]]', async () => {
+    const { window } = dom;
+    const container = window.document.getElementById('screen');
+    const adapter = createWebAdapter();
+    const store = createConnectionStore(adapter);
+    await store.save({ baseUrl: VALID_BASE, token: FAKE_TOKEN });
+
+    const bodies = ['# 协议\n\n见 [[运行指南]] 的说明。', '# 运行指南\n\n这里是操作步骤。'];
+    const paths = ['wiki/协议.md', 'wiki/运行指南.md'];
+    const entries = paths.map((relativePath, i) => ({
+      id: 'd' + String(i).padStart(42, '0'),
+      relativePath,
+      kind: 'document',
+      mime: 'text/markdown; charset=utf-8',
+      size: bodies[i].length,
+      mtime: '2026-08-18T00:00:00Z',
+      sha256: 'h' + String(i).padStart(63, '0'),
+      title: relativePath.split('/')[1].replace('.md', ''),
+    }));
+    const manifest = {
+      schemaVersion: 1,
+      generatedAt: '2026-08-18T00:00:00Z',
+      revision: 'r' + 'e'.repeat(63),
+      entries,
+    };
+    await db.commitRevision({
+      revision: manifest.revision,
+      manifest,
+      contents: entries.map((e, i) => ({ sha256: e.sha256, text: bodies[i] })),
+    });
+
+    const app = await bootstrapApp({
+      container,
+      isNative: false,
+      connectionStoreImpl: store,
+      dbImpl: db,
+      randomImpl: () => 0,
+      fetchImpl: async () => {
+        throw new Error('no network');
+      },
+    });
+
+    // 打开「协议」笔记（列表随机排序，用 data-open 精确定位）。
+    const id0 = 'd' + '0'.repeat(42);
+    const id1 = 'd' + '1'.padStart(42, '0');
+    container.querySelector('[data-open="' + id0 + '"]').click();
+    await vi.waitFor(() => expect(app.state.detail?.id).toBe(id0));
+
+    // 点正文里的双链 → 跳到「运行指南」。
+    const link = container.querySelector('.wiki-link');
+    expect(link).toBeTruthy();
+    expect(link.getAttribute('data-wiki-target')).toBe('运行指南');
+    link.click();
+    await vi.waitFor(() => expect(app.state.detail?.id).toBe(id1));
+    expect(container.querySelector('#detail-title').textContent).toContain('运行指南');
+  });
+
+  it('shows a toast when a wiki link target does not exist', async () => {
+    const { window } = dom;
+    const container = window.document.getElementById('screen');
+    const adapter = createWebAdapter();
+    const store = createConnectionStore(adapter);
+    await store.save({ baseUrl: VALID_BASE, token: FAKE_TOKEN });
+
+    const body = '# 协议\n\n见 [[不存在的页面]]。';
+    const entry = {
+      id: 'd' + '0'.repeat(42),
+      relativePath: 'wiki/协议.md',
+      kind: 'document',
+      mime: 'text/markdown; charset=utf-8',
+      size: body.length,
+      mtime: '2026-08-18T00:00:00Z',
+      sha256: 'h' + '0'.repeat(63),
+      title: '协议',
+    };
+    const manifest = {
+      schemaVersion: 1,
+      generatedAt: '2026-08-18T00:00:00Z',
+      revision: 'r' + 'd'.repeat(63),
+      entries: [entry],
+    };
+    await db.commitRevision({
+      revision: manifest.revision,
+      manifest,
+      contents: [{ sha256: entry.sha256, text: body }],
+    });
+
+    const app = await bootstrapApp({
+      container,
+      isNative: false,
+      connectionStoreImpl: store,
+      dbImpl: db,
+      randomImpl: () => 0,
+      fetchImpl: async () => {
+        throw new Error('no network');
+      },
+    });
+    let toast = '';
+    app.ui.toast = (m) => {
+      toast = m;
+    };
+
+    container.querySelector('[data-open="d' + '0'.repeat(42) + '"]').click();
+    await vi.waitFor(() => expect(app.state.detail).toBeTruthy());
+    container.querySelector('.wiki-link').click();
+    expect(toast).toContain('未找到对应笔记');
+    // 停留在当前笔记。
+    expect(app.state.detail.id).toBe('d' + '0'.repeat(42));
+  });
+});

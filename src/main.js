@@ -195,6 +195,8 @@ export async function bootstrapApp(options = {}) {
   let allArtifacts = [];
   let docById = new Map();
   let artifactById = new Map();
+  /** Obsidian 双链目标名（文件名去扩展 / title）→ 文档 id。 */
+  let wikiTargets = new Map();
 
   /* ─── content loading ───────────────────────────────────── */
   /** 当前应展示的文档列表：搜索态按相关度，浏览态按分类过滤 + 随机洗牌。 */
@@ -248,6 +250,15 @@ export async function bootstrapApp(options = {}) {
     allArtifacts = arts;
     docById = nextDocById;
     artifactById = nextArtifactById;
+
+    // 双链跳转目标索引：Obsidian 双链用「文件名去扩展名」或页面 title 定位。
+    const nextWikiTargets = new Map();
+    for (const d of docs) {
+      const base = String(d.relativePath).split('/').pop().replace(/\.[^.]+$/, '');
+      if (base && !nextWikiTargets.has(base)) nextWikiTargets.set(base, d.id);
+      if (d.title && !nextWikiTargets.has(d.title)) nextWikiTargets.set(d.title, d.id);
+    }
+    wikiTargets = nextWikiTargets;
 
     // 分类：有文档的顶层目录，wiki/outputs 优先，其余按名称排序。
     const categories = [];
@@ -388,6 +399,16 @@ export async function bootstrapApp(options = {}) {
     ui.update(state);
   }
 
+  /** Obsidian 双链跳转：按目标名找到对应笔记并打开。 */
+  function openWikiLink(target) {
+    const id = wikiTargets.get(String(target ?? '').trim());
+    if (id) {
+      openDocument(id);
+    } else {
+      ui.toast('未找到对应笔记：' + target);
+    }
+  }
+
   /* ─── connection sheet ──────────────────────────────────── */
   async function testConnection(baseUrl, token) {
     ui.setConnectionBusy(true);
@@ -458,6 +479,7 @@ export async function bootstrapApp(options = {}) {
     allArtifacts = [];
     docById = new Map();
     artifactById = new Map();
+    wikiTargets = new Map();
     search = null;
     api = null;
     engine = null;
@@ -606,6 +628,9 @@ export async function bootstrapApp(options = {}) {
     },
     onToggleFavorite: (id) => {
       toggleFavorite(id);
+    },
+    onOpenWikiLink: (target) => {
+      openWikiLink(target);
     },
     onQueryChange: (query) => {
       state.query = query;

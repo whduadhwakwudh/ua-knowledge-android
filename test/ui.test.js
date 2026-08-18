@@ -76,7 +76,7 @@ function baseState(overrides = {}) {
 function mountDOM(wiringOverrides = {}) {
   const dom = new JSDOM(INDEX_HTML, { url: 'https://local.test/' });
   const container = dom.window.document.querySelector('#screen');
-  const calls = { sync: 0, open: [], fav: [], conn: [], query: [], dl: [], close: [], tab: [], cat: [], shuffle: 0, send: [], clearChat: 0 };
+  const calls = { sync: 0, open: [], fav: [], conn: [], query: [], dl: [], close: [], tab: [], cat: [], shuffle: 0, send: [], clearChat: 0, wiki: [] };
   const wiring = {
     onSync: () => {
       calls.sync += 1;
@@ -113,6 +113,9 @@ function mountDOM(wiringOverrides = {}) {
     },
     onClearChat: () => {
       calls.clearChat += 1;
+    },
+    onOpenWikiLink: (target) => {
+      calls.wiki.push(target);
     },
     ...wiringOverrides,
   };
@@ -444,6 +447,27 @@ describe('mountApp — assistant chat', () => {
     ui.update(baseState({ assistantMessages: [{ role: 'user', text: 'x' }] }));
     $id(container, 'btn-clear-chat').click();
     expect(calls.clearChat).toBe(1);
+  });
+});
+
+describe('mountApp — Obsidian wiki links', () => {
+  it('clicking a wiki link in the detail body fires onOpenWikiLink with the target', () => {
+    const { container, ui, calls } = mountDOM();
+    const html = renderMarkdown('见 [[知识库运行协议]]。');
+    ui.update(baseState({ detail: { id: 'd1', title: 't', chips: [], html } }));
+    const link = container.querySelector('.wiki-link');
+    expect(link).toBeTruthy();
+    expect(link.getAttribute('data-wiki-target')).toBe('知识库运行协议');
+    link.click();
+    expect(calls.wiki).toEqual(['知识库运行协议']);
+  });
+
+  it('a malformed target never becomes an element (stays inside the data attribute)', () => {
+    const { container, ui } = mountDOM();
+    const html = renderMarkdown('[[<img src=x onerror=alert(1)>]]');
+    ui.update(baseState({ detail: { id: 'd1', title: 't', chips: [], html } }));
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('.wiki-link')).toBeTruthy();
   });
 });
 
