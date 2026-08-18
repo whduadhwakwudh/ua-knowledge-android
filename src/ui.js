@@ -469,7 +469,13 @@ export function mountApp(container, wiring = {}) {
   }
 
   function renderArtifacts(state) {
-    const list = state.artifacts ?? [];
+    const all = state.artifacts ?? [];
+    // 只保留最新版本：按 mtime（ISO 8601，可字典序比较）取最新一个。
+    // 旧版本仍可被服务端 manifest 列出（如历史日期命名），但这里不再展示。
+    const list =
+      all.length === 0
+        ? []
+        : [all.reduce((a, b) => (a.mtime >= b.mtime ? a : b))];
     toggleHidden($('#artifacts-section'), list.length === 0);
     if ($('#artifacts-count')) $('#artifacts-count').textContent = list.length + ' 个';
     if ($('#artifacts-list')) $('#artifacts-list').innerHTML = list.map(artifactRowHtml).join('');

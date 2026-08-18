@@ -801,20 +801,6 @@
                 <button class="btn-secondary" id="search-clear2">清空搜索</button>
               </div>
             </section>
-
-            <!-- ═══ 发布包 ═══ -->
-            <section class="pad hidden" id="artifacts-section" style="margin-top: 26px;" data-od-id="artifacts">
-              <div class="section-head row-between">
-                <h2>发布包</h2>
-                <span class="meta" id="artifacts-count"></span>
-              </div>
-              <div class="grouped" id="artifacts-list"></div>
-              <div class="empty-card hidden" id="artifacts-empty">
-                <svg class="ec-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v17M5.5 10.5 12 7l6.5 3.5" stroke-linejoin="round"/></svg>
-                <h3>暂无发布包</h3>
-                <p>来自 outputs/ 目录的 APK 会出现在这里，可下载安装。</p>
-              </div>
-            </section>
           </main>
 
           <!-- ═══ 收藏 ═══ -->
@@ -866,6 +852,20 @@
                 <div class="stat"><div class="num" id="stat-notes">127</div><div class="meta">笔记数</div></div>
                 <div class="stat"><div class="num" id="stat-sources">36</div><div class="meta">来源数</div></div>
                 <div class="stat"><div class="num" id="stat-favs">6</div><div class="meta">收藏数</div></div>
+              </div>
+            </section>
+
+            <!-- ═══ 发布包（仅最新版本，可下载安装） ═══ -->
+            <section class="pad hidden" id="artifacts-section" style="margin-bottom: 22px;" data-od-id="artifacts">
+              <div class="section-head row-between">
+                <h2>发布包</h2>
+                <span class="meta" id="artifacts-count"></span>
+              </div>
+              <div class="grouped" id="artifacts-list"></div>
+              <div class="empty-card hidden" id="artifacts-empty">
+                <svg class="ec-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v17M5.5 10.5 12 7l6.5 3.5" stroke-linejoin="round"/></svg>
+                <h3>暂无发布包</h3>
+                <p>来自 outputs/ 目录的 APK 会出现在这里，可下载安装。</p>
               </div>
             </section>
             <section class="pad" data-od-id="settings-list">

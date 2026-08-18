@@ -508,15 +508,30 @@ describe('mountApp — documents and favorites', () => {
 });
 
 describe('mountApp — artifacts', () => {
-  it('lists artifact entries with download buttons wired to the hook', () => {
+  it('shows only the newest artifact and wires its download to the hook', () => {
     const { container, ui, calls } = mountDOM();
-    ui.update(baseState({ artifacts: [artifactFixture('a1'), artifactFixture('a2')] }));
+    ui.update(
+      baseState({
+        artifacts: [
+          artifactFixture('a1', { mtime: '2026-01-01T00:00:00Z' }),
+          artifactFixture('a2', { mtime: '2026-02-01T00:00:00Z' }),
+        ],
+      }),
+    );
     expect(isHidden($id(container, 'artifacts-section'))).toBe(false);
-    expect($id(container, 'artifacts-list').textContent).toContain('发布包 a1');
-    expect($id(container, 'artifacts-count').textContent).toContain('2');
+    expect($id(container, 'artifacts-count').textContent).toContain('1');
+    expect($id(container, 'artifacts-list').textContent).toContain('发布包 a2');
+    expect($id(container, 'artifacts-list').textContent).not.toContain('发布包 a1');
 
-    container.querySelector('[data-download-id="a1"]').click();
-    expect(calls.dl).toEqual(['a1']);
+    container.querySelector('[data-download-id="a2"]').click();
+    expect(calls.dl).toEqual(['a2']);
+  });
+
+  it('the artifacts section lives on the me page, not the home page', () => {
+    const { container, ui } = mountDOM();
+    ui.update(baseState({ artifacts: [artifactFixture('a1')] }));
+    expect($id(container, 'view-me').querySelector('#artifacts-section')).toBeTruthy();
+    expect($id(container, 'view-home').querySelector('#artifacts-section')).toBeNull();
   });
 
   it('hides the artifacts section when there are none', () => {
