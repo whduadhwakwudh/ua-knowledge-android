@@ -444,12 +444,27 @@ export function mountApp(container, wiring = {}) {
     const statusEl = $('#sync-status-text');
     const countEl = $('#sync-count-text');
     const syncBtn = $('#btn-sync');
+    const progress = $('#sync-progress');
+    const fill = $('#sync-progress-fill');
     if (!statusEl) return;
 
     let status = '';
     let count = '';
     if (state.syncing) {
       const counts = state.syncCounts ?? {};
+      // 进度条：download/verify 有进度数据时定量填充，其余阶段不定量流动。
+      if (progress) progress.classList.remove(HIDDEN);
+      if (fill) {
+        fill.classList.remove('indeterminate');
+        fill.style.width = '';
+        const total = counts.total ?? 0;
+        const done = state.syncPhase === 'download' ? counts.downloaded : state.syncPhase === 'verify' ? counts.verified : undefined;
+        if (typeof done === 'number' && total > 0) {
+          fill.style.width = Math.min(100, Math.round((done / total) * 100)) + '%';
+        } else {
+          fill.classList.add('indeterminate');
+        }
+      }
       switch (state.syncPhase) {
         case 'manifest':
           status = '正在同步 · 获取目录';
@@ -469,22 +484,29 @@ export function mountApp(container, wiring = {}) {
         default:
           status = '正在同步 · 准备中';
       }
-    } else if (state.syncError) {
-      status = '同步失败 · ' + state.syncError;
-      count = '显示本地缓存';
-    } else if (state.syncPhase === 'complete' && state.syncCounts) {
-      const { added = 0, updated = 0, removed = 0, unchanged = 0 } = state.syncCounts;
-      if (added === 0 && updated === 0 && removed === 0) {
-        status = '已是最新';
-      } else {
-        status = '同步完成';
-        count = `新增 ${added} · 更新 ${updated} · 移除 ${removed} · 未变 ${unchanged}`;
-      }
-    } else if (state.lastSyncAt) {
-      status = '已同步 · ' + formatTime(state.lastSyncAt);
     } else {
-      status = '尚未同步';
-      count = '连接设备后即可拉取内容';
+      if (progress) progress.classList.add(HIDDEN);
+      if (fill) {
+        fill.classList.remove('indeterminate');
+        fill.style.width = '';
+      }
+      if (state.syncError) {
+        status = '同步失败 · ' + state.syncError;
+        count = '显示本地缓存';
+      } else if (state.syncPhase === 'complete' && state.syncCounts) {
+        const { added = 0, updated = 0, removed = 0, unchanged = 0 } = state.syncCounts;
+        if (added === 0 && updated === 0 && removed === 0) {
+          status = '已是最新';
+        } else {
+          status = '同步完成';
+          count = `新增 ${added} · 更新 ${updated} · 移除 ${removed} · 未变 ${unchanged}`;
+        }
+      } else if (state.lastSyncAt) {
+        status = '已同步 · ' + formatTime(state.lastSyncAt);
+      } else {
+        status = '尚未同步';
+        count = '连接设备后即可拉取内容';
+      }
     }
     statusEl.textContent = status;
     if (countEl) countEl.textContent = count;
@@ -741,7 +763,6 @@ export function mountApp(container, wiring = {}) {
 
   $('#btn-sync')?.addEventListener('click', () => wiring.onSync?.());
   $('#btn-recent-sync')?.addEventListener('click', () => wiring.onSync?.());
-  $('#setting-sync')?.addEventListener('click', () => wiring.onSync?.());
   $('#btn-auth-retry')?.addEventListener('click', () => wiring.onSync?.());
   $('#btn-shuffle')?.addEventListener('click', () => wiring.onShuffle?.());
 

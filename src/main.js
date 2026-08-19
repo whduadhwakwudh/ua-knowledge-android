@@ -199,6 +199,21 @@ export async function bootstrapApp(options = {}) {
   let wikiTargets = new Map();
   /** 反向链接：双链目标名 → 引用该目标的文档 [{id, title}]。 */
   let backlinkIndex = new Map();
+  /** 详情页跳转栈：双链 A→B→C 时，返回键按栈回到上一笔记。 */
+  let detailStack = [];
+
+  /**
+   * 双链目标名候选：文件名去扩展、title，以及 S 编号前缀（如 S003）。
+   * 知识库来源笔记命名 S003-xxx.md，正文常以 [[S003]] 引用编号。
+   */
+  function wikiKeysFor(base, title) {
+    const keys = [];
+    if (base) keys.push(base);
+    if (title && !keys.includes(title)) keys.push(title);
+    const m = /^(S\d+)(?:[-_].*)?$/i.exec(base ?? '');
+    if (m && !keys.includes(m[1])) keys.push(m[1]);
+    return keys;
+  }
 
   /* ─── content loading ───────────────────────────────────── */
   /** 当前应展示的文档列表：搜索态按相关度，浏览态按分类过滤 + 随机洗牌。 */
@@ -253,12 +268,13 @@ export async function bootstrapApp(options = {}) {
     docById = nextDocById;
     artifactById = nextArtifactById;
 
-    // 双链跳转目标索引：Obsidian 双链用「文件名去扩展名」或页面 title 定位。
+    // 双链跳转目标索引：文件名去扩展 / title / S 编号前缀。
     const nextWikiTargets = new Map();
     for (const d of docs) {
       const base = String(d.relativePath).split('/').pop().replace(/\.[^.]+$/, '');
-      if (base && !nextWikiTargets.has(base)) nextWikiTargets.set(base, d.id);
-      if (d.title && !nextWikiTargets.has(d.title)) nextWikiTargets.set(d.title, d.id);
+      for (const key of wikiKeysFor(base, d.title)) {
+        if (!nextWikiTargets.has(key)) nextWikiTargets.set(key, d.id);
+      }
     }
     wikiTargets = nextWikiTargets;
 
@@ -387,7 +403,7 @@ export async function bootstrapApp(options = {}) {
   }
 
   /* ─── document + favorites ──────────────────────────────── */
-  async function openDocument(id) {
+  async function openDocument(id, { restore = false } = {}) {
     const doc = docById.get(id);
     if (!doc) return;
     let html;
@@ -397,17 +413,22 @@ export async function bootstrapApp(options = {}) {
     } catch {
       html = '<p>内容读取失败，请重新同步后再试。</p>';
     }
-    // 反向链接：以当前笔记的「文件名去扩展」和 title 为目标名，找引用它的文档。
+    // 反向链接：以当前笔记的「文件名去扩展」/ title / S 编号为目标名，找引用者。
     const base = String(doc.relativePath).split('/').pop().replace(/\.[^.]+$/, '');
     const refs = [];
     const seen = new Set();
-    for (const key of [base, doc.title]) {
+    for (const key of wikiKeysFor(base, doc.title)) {
       for (const ref of backlinkIndex.get(key) ?? []) {
         if (ref.id !== id && !seen.has(ref.id)) {
           seen.add(ref.id);
           refs.push(ref);
         }
       }
+    }
+    // 详情页内跳转（双链/反向链接）时压栈，返回键可回到上一笔记；
+    // restore（从返回栈恢复）时不重复压栈。
+    if (!restore && state.detail && state.detail.id !== id) {
+      detailStack.push(state.detail.id);
     }
     state.detail = {
       id: doc.id,
@@ -416,6 +437,17 @@ export async function bootstrapApp(options = {}) {
       html,
       backlinks: refs,
     };
+    ui.update(state);
+  }
+
+  /** 关闭详情：有跳转栈则回到上一笔记，否则退出详情页。 */
+  async function closeDetail() {
+    if (detailStack.length > 0) {
+      const prevId = detailStack.pop();
+      await openDocument(prevId, { restore: true });
+      return;
+    }
+    state.detail = null;
     ui.update(state);
   }
 
@@ -499,6 +531,7 @@ export async function bootstrapApp(options = {}) {
     state.artifacts = [];
     state.favorites = [];
     state.detail = null;
+    detailStack = [];
     state.category = 'all';
     state.categories = [];
     state.allDocuments = [];
@@ -687,9 +720,10 @@ export async function bootstrapApp(options = {}) {
     onSelectTab: (tab) => {
       state.tab = tab;
       state.detail = null;
+      detailStack = [];
     },
     onCloseDetail: () => {
-      state.detail = null;
+      closeDetail();
     },
     onSendQuestion: (question) => {
       sendQuestion(question);
@@ -728,8 +762,8 @@ export async function bootstrapApp(options = {}) {
         return;
       }
       if (state.detail) {
-        state.detail = null;
-        ui.update(state);
+        // 双链跳转栈：优先回到上一笔记，栈空才退出详情页。
+        closeDetail();
         return;
       }
       // Top level: let the platform default exit the app.

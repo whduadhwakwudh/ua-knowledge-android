@@ -562,4 +562,119 @@ describe('bootstrapApp — Obsidian wiki links', () => {
     container.querySelector('#detail-backlinks [data-open="' + idC + '"]').click();
     await vi.waitFor(() => expect(app.state.detail?.id).toBe(idC));
   });
+
+  it('jumps via [[S003]]-style source-number links to S-prefixed notes', async () => {
+    const { window } = dom;
+    const container = window.document.getElementById('screen');
+    const adapter = createWebAdapter();
+    const store = createConnectionStore(adapter);
+    await store.save({ baseUrl: VALID_BASE, token: FAKE_TOKEN });
+
+    const bodies = ['# 来源引用\n\n见 [[S003]] 的结论。', '# S003 静电纺丝\n\n正文。'];
+    const paths = ['wiki/来源引用.md', 'raw/S003-静电纺丝综述.md'];
+    const entries = paths.map((relativePath, i) => ({
+      id: 'd' + String(i).padStart(42, '0'),
+      relativePath,
+      kind: 'document',
+      mime: 'text/markdown; charset=utf-8',
+      size: bodies[i].length,
+      mtime: '2026-08-18T00:00:00Z',
+      sha256: 'h' + String(i).padStart(63, '0'),
+      title: relativePath.split('/')[1].replace('.md', ''),
+    }));
+    const manifest = {
+      schemaVersion: 1,
+      generatedAt: '2026-08-18T00:00:00Z',
+      revision: 'r' + 'b'.repeat(63),
+      entries,
+    };
+    await db.commitRevision({
+      revision: manifest.revision,
+      manifest,
+      contents: entries.map((e, i) => ({ sha256: e.sha256, text: bodies[i] })),
+    });
+
+    const app = await bootstrapApp({
+      container,
+      isNative: false,
+      connectionStoreImpl: store,
+      dbImpl: db,
+      randomImpl: () => 0,
+      fetchImpl: async () => {
+        throw new Error('no network');
+      },
+    });
+
+    const idWiki = 'd' + '0'.repeat(42);
+    const idSource = 'd' + '1'.padStart(42, '0');
+    container.querySelector('[data-open="' + idWiki + '"]').click();
+    await vi.waitFor(() => expect(app.state.detail?.id).toBe(idWiki));
+
+    const link = container.querySelector('.wiki-link');
+    expect(link.getAttribute('data-wiki-target')).toBe('S003');
+    link.click();
+    await vi.waitFor(() => expect(app.state.detail?.id).toBe(idSource));
+    expect(container.querySelector('#detail-title').textContent).toContain('静电纺丝');
+  });
+
+  it('back from a wiki-link jump returns to the previous note, not home', async () => {
+    const { window } = dom;
+    const container = window.document.getElementById('screen');
+    const adapter = createWebAdapter();
+    const store = createConnectionStore(adapter);
+    await store.save({ baseUrl: VALID_BASE, token: FAKE_TOKEN });
+
+    const bodies = ['# 甲\n\n见 [[乙]]。', '# 乙\n\n正文。'];
+    const paths = ['wiki/甲.md', 'wiki/乙.md'];
+    const entries = paths.map((relativePath, i) => ({
+      id: 'd' + String(i).padStart(42, '0'),
+      relativePath,
+      kind: 'document',
+      mime: 'text/markdown; charset=utf-8',
+      size: bodies[i].length,
+      mtime: '2026-08-18T00:00:00Z',
+      sha256: 'h' + String(i).padStart(63, '0'),
+      title: relativePath.split('/')[1].replace('.md', ''),
+    }));
+    const manifest = {
+      schemaVersion: 1,
+      generatedAt: '2026-08-18T00:00:00Z',
+      revision: 'r' + 'a'.repeat(63),
+      entries,
+    };
+    await db.commitRevision({
+      revision: manifest.revision,
+      manifest,
+      contents: entries.map((e, i) => ({ sha256: e.sha256, text: bodies[i] })),
+    });
+
+    const app = await bootstrapApp({
+      container,
+      isNative: false,
+      connectionStoreImpl: store,
+      dbImpl: db,
+      randomImpl: () => 0,
+      fetchImpl: async () => {
+        throw new Error('no network');
+      },
+    });
+
+    const idA = 'd' + '0'.repeat(42);
+    const idB = 'd' + '1'.padStart(42, '0');
+
+    // 打开甲 → 双链跳到乙。
+    container.querySelector('[data-open="' + idA + '"]').click();
+    await vi.waitFor(() => expect(app.state.detail?.id).toBe(idA));
+    container.querySelector('.wiki-link').click();
+    await vi.waitFor(() => expect(app.state.detail?.id).toBe(idB));
+
+    // 返回 → 回到甲（而不是直接退出详情回首页）。
+    container.querySelector('#detail-back').click();
+    await vi.waitFor(() => expect(app.state.detail?.id).toBe(idA));
+    expect(container.querySelector('#detail-title').textContent).toContain('甲');
+
+    // 再返回 → 栈空，退出详情页。
+    container.querySelector('#detail-back').click();
+    await vi.waitFor(() => expect(app.state.detail).toBeNull());
+  });
 });

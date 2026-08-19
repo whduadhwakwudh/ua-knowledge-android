@@ -240,6 +240,21 @@ describe('mountApp — sync phases and results', () => {
     }
   });
 
+  it('progress bar: indeterminate while fetching, filled by download progress, hidden when idle', () => {
+    const { container, ui } = mountDOM();
+    // manifest 阶段：无进度数据 → 不定量流动动画。
+    ui.update(baseState({ syncing: true, syncPhase: 'manifest', syncCounts: { total: 5 } }));
+    expect(isHidden($id(container, 'sync-progress'))).toBe(false);
+    expect($id(container, 'sync-progress-fill').classList.contains('indeterminate')).toBe(true);
+    // download 阶段：2/5 → 40%。
+    ui.update(baseState({ syncing: true, syncPhase: 'download', syncCounts: { total: 5, downloaded: 2 } }));
+    expect($id(container, 'sync-progress-fill').style.width).toBe('40%');
+    expect($id(container, 'sync-progress-fill').classList.contains('indeterminate')).toBe(false);
+    // 同步结束：隐藏进度条。
+    ui.update(baseState({ syncing: false, lastSyncAt: '2026-03-24T08:00:00Z' }));
+    expect(isHidden($id(container, 'sync-progress'))).toBe(true);
+  });
+
   it('shows the added/updated/removed/unchanged result counts on success', () => {
     const { container, ui } = mountDOM();
     ui.update(
@@ -674,11 +689,12 @@ describe('mountApp — artifacts', () => {
     expect(calls.dl).toEqual(['a2']);
   });
 
-  it('the artifacts section lives on the me page, not the home page', () => {
+  it('the artifacts section lives inside the about sheet, not on any tab page', () => {
     const { container, ui } = mountDOM();
     ui.update(baseState({ artifacts: [artifactFixture('a1')] }));
-    expect($id(container, 'view-me').querySelector('#artifacts-section')).toBeTruthy();
+    expect($id(container, 'sheet-about').querySelector('#artifacts-section')).toBeTruthy();
     expect($id(container, 'view-home').querySelector('#artifacts-section')).toBeNull();
+    expect($id(container, 'view-me').querySelector('#artifacts-section')).toBeNull();
   });
 
   it('hides the artifacts section when there are none', () => {
