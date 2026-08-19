@@ -747,6 +747,18 @@
     .view { padding-bottom: max(28px, env(safe-area-inset-bottom)); }
     .tabbar { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
     .toast { top: max(14px, env(safe-area-inset-top)); }
+    /* ─── 横屏适配：内容限宽居中 + 左右安全区 ─────────────── */
+    @media (orientation: landscape) {
+      .screen {
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+      }
+      .pad { max-width: 760px; margin-inline: auto; width: 100%; }
+      .topbar, .tabbar, .chat-input-bar { max-width: 820px; margin-inline: auto; width: 100%; }
+      .detail-scroll .pad { max-width: 860px; }
+      .detail-body { max-width: 720px; margin-inline: auto; }
+      .chat-list { max-width: 820px; margin-inline: auto; width: 100%; }
+    }
     @media (min-width: 720px) {
       .screen { max-width: 600px; margin-inline: auto; box-shadow: 0 0 0 1px var(--border); }
     }
@@ -946,7 +958,7 @@
                 <button class="setting-row" id="setting-about" data-od-id="setting-about">
                   <span class="set-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><circle cx="12" cy="7.6" r="0.7"/></svg></span>
                   <span class="set-label">关于</span>
-                  <span class="set-sub">UA 1.5.8</span>
+                  <span class="set-sub">UA 1.5.9</span>
                   <svg class="chevron" viewBox="0 0 24 24" aria-hidden><path d="M9 5.5 15.5 12 9 18.5"/></svg>
                 </button>
               </div>
@@ -1100,7 +1112,7 @@
             <span class="grabber" aria-hidden="true"></span>
             <div class="about-mark">U</div>
             <h2 class="sheet-title" id="sheet-about-title" style="text-align:center;">UA</h2>
-            <p class="sheet-sub meta" style="text-align:center;">版本 1.5.8</p>
+            <p class="sheet-sub meta" style="text-align:center;">版本 1.5.9</p>
             <p class="about-line">随手记录 · 随时检索 · 收藏沉淀</p>
             <p class="about-text meta">个人知识库的移动端入口。数据本地优先，支持多端同步。</p>
             <div class="sheet-content" style="margin-top: 14px;">
