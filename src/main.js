@@ -596,16 +596,33 @@ export async function bootstrapApp(options = {}) {
         },
       });
       ui.toast('下载完成，请在弹出的系统安装确认中点击「安装」；首次使用需在系统设置允许「安装未知应用」');
+      notifySystem('APK 下载完成', entry.title);
     } catch (err) {
       if (err && err.code === 'HASH_MISMATCH') {
         ui.toast('校验失败，已删除文件');
+        notifySystem('APK 下载失败', '内容校验失败，已删除文件');
       } else if (err && err.code === ApiError.UNAUTHORIZED) {
         state.connection = 'auth-error';
         ui.update(state);
         ui.toast('认证失败，请重新连接');
       } else {
         ui.toast('下载失败，请稍后重试');
+        notifySystem('APK 下载失败', '请稍后重试');
       }
+    }
+  }
+
+  /* ─── 系统通知（文件/APK 下载完成或失败） ─────────────────── */
+  /** 通过原生 UaFileStore 插件发系统通知；插件/权限不可用时静默降级。 */
+  async function notifySystem(title, body) {
+    try {
+      const { Capacitor } = await import('@capacitor/core');
+      const plugin = Capacitor.Plugins && Capacitor.Plugins.UaFileStore;
+      if (plugin && typeof plugin.notify === 'function') {
+        await plugin.notify({ title, body });
+      }
+    } catch {
+      // 通知失败不影响下载流程本身；静默忽略。
     }
   }
 
@@ -732,9 +749,11 @@ export async function bootstrapApp(options = {}) {
         apiBaseUrl: state.baseUrl,
         token: state.token,
       });
-      ui.toast('下载完成：' + entry.name);
-    } catch {
+      ui.toast('下载完成：' + entry.name + '（已存入系统「下载」目录）');
+      notifySystem('文件下载完成', entry.name + ' 已存入系统「下载」目录');
+    } catch (err) {
       ui.toast('下载失败，请稍后重试');
+      notifySystem('文件下载失败', entry.name + ' 下载失败，请稍后重试');
     } finally {
       state.fileDownloadingId = null;
       ui.update(state);

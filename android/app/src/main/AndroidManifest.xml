@@ -52,6 +52,20 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!--
+      Files transfer: moving downloaded files into the public Downloads
+      folder. API 29+ uses MediaStore.Downloads (scoped storage, no
+      permission needed); API 24-28 writes directly and needs this runtime
+      permission (requested on demand by the UaFileStore plugin).
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <!--
+      Download completion notifications on Android 13+ (API 33) require this
+      runtime permission; requested on demand by the UaFileStore plugin.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
       Installing a downloaded APK requires this permission on Android 8+
       (API 26+): without it the system package installer silently ignores the
       ACTION_VIEW intent and no confirmation dialog appears. The user must
