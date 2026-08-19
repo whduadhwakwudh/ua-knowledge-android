@@ -96,17 +96,19 @@ export function createSyncEngine({ api, db }) {
     }
 
     // ---- phase: download (documents only; artifacts are metadata-only) ----
-    report({ phase: 'download', revision, downloaded: toFetch.length });
+    // 逐篇上报 downloaded 计数，让 UI 进度条随下载逐步推进。
+    report({ phase: 'download', revision, downloaded: 0 });
     const contents = [];
-    for (const entry of toFetch) {
+    for (let i = 0; i < toFetch.length; i += 1) {
       // No etag is persisted, so every changed/new document is a full fetch.
       // A 304 (null) for an entry we expected to change violates the contract:
       // fail safe, keeping the previous active revision.
-      const fetched = await api.getDocument(entry.id);
+      const fetched = await api.getDocument(toFetch[i].id);
       if (fetched === null) {
         throw new ApiError(ApiError.INTEGRITY, 'document unexpectedly not modified');
       }
-      contents.push({ sha256: entry.sha256, text: fetched.text });
+      contents.push({ sha256: toFetch[i].sha256, text: fetched.text });
+      report({ phase: 'download', revision, downloaded: i + 1 });
     }
 
     // ---- phase: verify ----------------------------------------------------

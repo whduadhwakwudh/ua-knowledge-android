@@ -370,13 +370,16 @@ describe('phase events', () => {
     const events = [];
     const result = await engine(api).sync({ onPhase: (phase) => events.push(phase) });
 
-    expect(events.map((e) => e.phase)).toEqual(['manifest', 'download', 'verify', 'commit', 'complete']);
+    // 下载阶段逐篇上报进度：开始 0 + 2 篇文档 → 3 个 download 事件。
+    expect(events.map((e) => e.phase)).toEqual(['manifest', 'download', 'download', 'download', 'verify', 'commit', 'complete']);
 
     expect(events[0]).toMatchObject({ phase: 'manifest', revision: REV_1, total: 3 });
-    expect(events[1]).toMatchObject({ phase: 'download', revision: REV_1, downloaded: 2 });
-    expect(events[2]).toMatchObject({ phase: 'verify', revision: REV_1, verified: 2 });
-    expect(events[3]).toMatchObject({ phase: 'commit', revision: REV_1 });
-    expect(events[4]).toMatchObject({
+    expect(events[1]).toMatchObject({ phase: 'download', revision: REV_1, downloaded: 0 });
+    expect(events[2]).toMatchObject({ phase: 'download', revision: REV_1, downloaded: 1 });
+    expect(events[3]).toMatchObject({ phase: 'download', revision: REV_1, downloaded: 2 });
+    expect(events[4]).toMatchObject({ phase: 'verify', revision: REV_1, verified: 2 });
+    expect(events[5]).toMatchObject({ phase: 'commit', revision: REV_1 });
+    expect(events[6]).toMatchObject({
       phase: 'complete',
       revision: REV_1,
       added: result.added,
@@ -475,7 +478,7 @@ describe('single-flight sync (concurrent calls share one run)', () => {
     // Only the FIRST caller's onPhase ran (the shared run reports to it);
     // the second caller receives the same settled result but no duplicate
     // event stream.
-    expect(firstEvents.map((e) => e.phase)).toEqual(['manifest', 'download', 'verify', 'commit', 'complete']);
+    expect(firstEvents.map((e) => e.phase)).toEqual(['manifest', 'download', 'download', 'download', 'verify', 'commit', 'complete']);
     expect(secondEvents).toEqual([]);
 
     // Active revision is committed exactly once and ordered.
