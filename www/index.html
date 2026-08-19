@@ -767,9 +767,12 @@
     .view { padding-bottom: max(28px, env(safe-area-inset-bottom)); }
     .tabbar { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
     .toast { top: max(14px, env(safe-area-inset-top)); }
-    /* ─── 横屏适配：内容限宽居中 + 左右安全区 ─────────────── */
+    /* ─── 横屏适配：内容限宽居中 + 左右安全区 + 详情分栏 ─────────── */
     @media (orientation: landscape) {
       .screen {
+        /* 覆盖竖屏遗留的上下 padding，避免横屏顶部/底部额外留白 */
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
         padding-left: env(safe-area-inset-left);
         padding-right: env(safe-area-inset-right);
       }
@@ -783,8 +786,16 @@
       #detail-pane:not(.hidden) { display: flex; }
       .detail-main { flex: 1 1 auto; }
     }
-    @media (min-width: 720px) {
+    /* 桌面壳预览时才允许把 screen 限宽为手机样式；
+       横屏（宽视口）永不限宽，保证真机横屏铺满全屏。 */
+    @media (min-width: 720px) and (orientation: portrait) {
       .screen { max-width: 600px; margin-inline: auto; box-shadow: 0 0 0 1px var(--border); }
+    }
+    /* 旋转后 100% 高度链在部分 WebView 不刷新（横屏上下露白边）；
+       100dvh 随视口实时更新，作为优先方案（后置声明覆盖 100%），
+       旧 WebView 不支持时自动回退 100%。 */
+    @supports (height: 100dvh) {
+      html, body, .stage, .device, .screen { height: 100dvh; }
     }
   </style>
 </head>
