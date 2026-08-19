@@ -571,6 +571,7 @@ export function mountApp(container, wiring = {}) {
       screen.classList.remove('detail-open');
       if ($('#view-detail')) $('#view-detail').setAttribute('aria-hidden', 'true');
       toggleHidden($('#detail-backlinks'), true);
+      toggleHidden($('#detail-pane'), true);
       currentDetailId = null;
       return;
     }
@@ -611,6 +612,36 @@ export function mountApp(container, wiring = {}) {
       } else {
         bl.classList.add(HIDDEN);
         bl.innerHTML = '';
+      }
+    }
+    // 横屏左侧面板：同分类笔记列表（data-open 复用跳转）。
+    const pane = $('#detail-pane');
+    if (pane) {
+      const siblings = detail.siblings ?? [];
+      if (siblings.length > 1) {
+        pane.innerHTML =
+          '<div class="pane-head">' +
+          esc(detail.label ?? '') +
+          '</div><div class="pane-list">' +
+          siblings
+            .map(
+              (s) =>
+                '<div class="pane-item' +
+                (s.id === detail.id ? ' active' : '') +
+                '" data-open="' +
+                esc(s.id) +
+                '" role="button" tabindex="0" aria-label="打开笔记：' +
+                esc(s.title) +
+                '">' +
+                esc(s.title) +
+                '</div>',
+            )
+            .join('') +
+          '</div>';
+        pane.classList.remove(HIDDEN);
+      } else {
+        pane.classList.add(HIDDEN);
+        pane.innerHTML = '';
       }
     }
     const star = $('#detail-star');
@@ -680,6 +711,38 @@ export function mountApp(container, wiring = {}) {
     if (sendBtn) sendBtn.disabled = asking;
   }
 
+  /* ─── rendering: files（文件传输） ──────────────────────── */
+  function renderFiles(state) {
+    const files = state.filesList ?? [];
+    const downloadingId = state.fileDownloadingId ?? null;
+    const list = $('#files-list');
+    const empty = $('#files-empty');
+    toggleHidden(empty, files.length > 0);
+    if (list) {
+      list.innerHTML = files
+        .map((f) => {
+          const downloading = downloadingId === f.id;
+          return (
+            '<div class="list-row"><div class="body"><div class="title">' +
+            esc(f.name) +
+            '</div><div class="sub">' +
+            formatSize(f.size) +
+            ' · ' +
+            formatTime(f.mtime) +
+            '</div></div>' +
+            '<button class="btn-primary" data-file-id="' +
+            esc(f.id) +
+            '" style="min-height:36px;padding:8px 12px;font-size:13px;border-radius:10px;"' +
+            (downloading ? ' disabled' : '') +
+            '>' +
+            (downloading ? '下载中…' : '下载') +
+            '</button></div>'
+          );
+        })
+        .join('');
+    }
+  }
+
   /* ─── full render ───────────────────────────────────────── */
   function update(nextState) {
     state = nextState ?? {};
@@ -691,6 +754,7 @@ export function mountApp(container, wiring = {}) {
     renderDetail(state);
     renderSidebar(state);
     renderAssistant(state);
+    renderFiles(state);
     applyTab(state.tab ?? 'home');
   }
 
@@ -817,6 +881,10 @@ export function mountApp(container, wiring = {}) {
   });
 
   $('#setting-appearance')?.addEventListener('click', () => openSheet('sheet-appearance'));
+  $('#setting-files')?.addEventListener('click', () => {
+    openSheet('sheet-files');
+    wiring.onOpenFiles?.();
+  });
   $$('#sheet-appearance .option-row').forEach((row) => {
     row.addEventListener('click', () => {
       applyTheme(row.dataset.value);
@@ -858,6 +926,11 @@ export function mountApp(container, wiring = {}) {
   $('#scrim')?.addEventListener('click', closeSheets);
 
   container.addEventListener('click', (e) => {
+    const fileBtn = e.target.closest('[data-file-id]');
+    if (fileBtn) {
+      wiring.onDownloadFile?.(fileBtn.dataset.fileId);
+      return;
+    }
     const wikiLink = e.target.closest('[data-wiki-target]');
     if (wikiLink) {
       wiring.onOpenWikiLink?.(wikiLink.getAttribute('data-wiki-target'));

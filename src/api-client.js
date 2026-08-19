@@ -451,5 +451,40 @@ export function createApiClient({
     return { answer: payload.answer };
   }
 
-  return { health, getManifest, getDocument, artifactUrl, askQuestion };
+  /** 文件传输列表：GET /v1/files → [{id, name, size, mtime}]。 */
+  async function listFiles() {
+    const res = await request('/v1/files', { headers: authHeaders() });
+    let body;
+    try {
+      body = await res.json();
+    } catch {
+      throw new ApiError(ApiError.SCHEMA, 'invalid files response');
+    }
+    if (!isObject(body) || !Array.isArray(body.files)) {
+      throw new ApiError(ApiError.SCHEMA, 'invalid files response');
+    }
+    return body.files.map((f) => {
+      if (
+        !isObject(f) ||
+        typeof f.id !== 'string' ||
+        !ENTRY_ID_RE.test(f.id) ||
+        typeof f.name !== 'string' ||
+        f.name === '' ||
+        typeof f.size !== 'number' ||
+        !Number.isInteger(f.size) ||
+        f.size < 0 ||
+        !isValidIsoDatetime(f.mtime)
+      ) {
+        throw new ApiError(ApiError.SCHEMA, 'invalid files response');
+      }
+      return { id: f.id, name: f.name, size: f.size, mtime: f.mtime };
+    });
+  }
+
+  /** 文件传输下载 URL（无凭据，下载时带 Bearer）。 */
+  function fileUrl(id) {
+    return `${origin}/v1/files/${encodeURIComponent(id)}`;
+  }
+
+  return { health, getManifest, getDocument, artifactUrl, askQuestion, listFiles, fileUrl };
 }

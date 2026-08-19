@@ -1009,3 +1009,50 @@ describe('askQuestion()', () => {
     await expect(client.askQuestion('hi')).rejects.toMatchObject({ code: 'INTEGRITY' });
   });
 });
+
+describe('listFiles() / fileUrl() — 文件传输', () => {
+  it('GETs /v1/files with the bearer token and returns validated entries', async () => {
+    let captured;
+    const client = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      fetchImpl: async (url, opts) => {
+        captured = { url, opts };
+        return jsonResponse({
+          files: [
+            { id: 'a'.repeat(43), name: '报告.pdf', size: 1024, mtime: '2026-08-19T00:00:00Z' },
+          ],
+        });
+      },
+    });
+    const files = await client.listFiles();
+    expect(files).toEqual([{ id: 'a'.repeat(43), name: '报告.pdf', size: 1024, mtime: '2026-08-19T00:00:00Z' }]);
+    expect(captured.url).toBe(`${BASE}/v1/files`);
+    expect(authHeaderEntries(captured.opts).length).toBe(1);
+  });
+
+  it('rejects malformed file entries with SCHEMA', async () => {
+    for (const bad of [
+      { files: 'nope' },
+      { files: [{ id: 'short', name: 'x', size: 1, mtime: '2026-08-19T00:00:00Z' }] },
+      { files: [{ id: 'a'.repeat(43), name: '', size: 1, mtime: '2026-08-19T00:00:00Z' }] },
+      { files: [{ id: 'a'.repeat(43), name: 'x', size: -1, mtime: '2026-08-19T00:00:00Z' }] },
+      { files: [{ id: 'a'.repeat(43), name: 'x', size: 1, mtime: 'not-a-date' }] },
+    ]) {
+      const client = createApiClient({
+        baseUrl: BASE,
+        token: FAKE_TOKEN,
+        fetchImpl: async () => jsonResponse(bad),
+      });
+      await expect(client.listFiles()).rejects.toMatchObject({ code: 'SCHEMA' });
+    }
+  });
+
+  it('fileUrl builds the download URL without credentials', () => {
+    const client = createApiClient({ baseUrl: BASE, token: FAKE_TOKEN });
+    const id = 'file/1?x';
+    const url = client.fileUrl(id);
+    expect(url).toBe(`${BASE}/v1/files/${encodeURIComponent(id)}`);
+    expect(url).not.toContain(FAKE_TOKEN);
+  });
+});

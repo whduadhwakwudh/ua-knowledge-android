@@ -25,6 +25,7 @@ import { createFavoritesStore } from './favorites.js';
 import { mountApp } from './ui.js';
 import { downloadAndVerifyApk } from './apk-download.js';
 import { createLlmClient, LlmError } from './llm-client.js';
+import { downloadFile } from './file-download.js';
 
 export function createAppState() {
   return {
@@ -68,6 +69,9 @@ function blankRuntimeState() {
     assistantAsking: false,
     // 手机内置助手：LLM API Key（安全存储），有 key 时助手直连 LLM，不依赖服务器。
     llmApiKey: null,
+    // 文件传输（电脑文件夹 → 手机下载）。
+    filesList: [],
+    fileDownloadingId: null,
   };
 }
 
@@ -425,6 +429,10 @@ export async function bootstrapApp(options = {}) {
         }
       }
     }
+    // 横屏分栏：同分类笔记列表。
+    const siblings = allDocuments
+      .filter((d) => d.label === doc.label)
+      .map((d) => ({ id: d.id, title: d.title }));
     // 详情页内跳转（双链/反向链接）时压栈，返回键可回到上一笔记；
     // restore（从返回栈恢复）时不重复压栈。
     if (!restore && state.detail && state.detail.id !== id) {
@@ -433,9 +441,11 @@ export async function bootstrapApp(options = {}) {
     state.detail = {
       id: doc.id,
       title: doc.title,
+      label: doc.label,
       chips: [doc.label, '更新于 ' + doc.updated, friendlySize(doc.size)],
       html,
       backlinks: refs,
+      siblings,
     };
     ui.update(state);
   }
@@ -538,6 +548,8 @@ export async function bootstrapApp(options = {}) {
     state.assistantMessages = [];
     state.assistantAsking = false;
     state.llmApiKey = null;
+    state.filesList = [];
+    state.fileDownloadingId = null;
     allDocuments = [];
     allArtifacts = [];
     docById = new Map();
@@ -682,6 +694,53 @@ export async function bootstrapApp(options = {}) {
     ui.update(state);
   }
 
+  /* ─── 文件传输（电脑文件夹 → 手机） ─────────────────────── */
+  async function loadFiles() {
+    if (!api) {
+      ui.toast('请先完成连接设置');
+      return;
+    }
+    try {
+      state.filesList = await api.listFiles();
+    } catch (err) {
+      if (err && err.code === ApiError.UNAUTHORIZED) {
+        state.connection = 'auth-error';
+        ui.toast('认证失败，请重新连接');
+      } else {
+        ui.toast('文件列表加载失败');
+      }
+    }
+    ui.update(state);
+  }
+
+  async function downloadFileEntry(id) {
+    const entry = state.filesList?.find((f) => f.id === id);
+    if (!entry) {
+      return;
+    }
+    if (!state.baseUrl || !state.token) {
+      ui.toast('请先完成连接设置');
+      return;
+    }
+    if (state.fileDownloadingId) return;
+    state.fileDownloadingId = id;
+    ui.update(state);
+    ui.toast('开始下载：' + entry.name);
+    try {
+      await downloadFile({
+        entry,
+        apiBaseUrl: state.baseUrl,
+        token: state.token,
+      });
+      ui.toast('下载完成：' + entry.name);
+    } catch {
+      ui.toast('下载失败，请稍后重试');
+    } finally {
+      state.fileDownloadingId = null;
+      ui.update(state);
+    }
+  }
+
   /* ─── mount ─────────────────────────────────────────────── */
   const ui = mountApp(container, {
     onSync: () => {
@@ -730,6 +789,12 @@ export async function bootstrapApp(options = {}) {
     },
     onClearChat: () => {
       clearChat();
+    },
+    onOpenFiles: () => {
+      loadFiles();
+    },
+    onDownloadFile: (id) => {
+      downloadFileEntry(id);
     },
   });
 

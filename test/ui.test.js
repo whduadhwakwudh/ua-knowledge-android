@@ -76,7 +76,7 @@ function baseState(overrides = {}) {
 function mountDOM(wiringOverrides = {}) {
   const dom = new JSDOM(INDEX_HTML, { url: 'https://local.test/' });
   const container = dom.window.document.querySelector('#screen');
-  const calls = { sync: 0, open: [], fav: [], conn: [], query: [], dl: [], close: [], tab: [], cat: [], shuffle: 0, send: [], clearChat: 0, wiki: [] };
+  const calls = { sync: 0, open: [], fav: [], conn: [], query: [], dl: [], close: [], tab: [], cat: [], shuffle: 0, send: [], clearChat: 0, wiki: [], files: 0, downloadFile: [] };
   const wiring = {
     onSync: () => {
       calls.sync += 1;
@@ -116,6 +116,12 @@ function mountDOM(wiringOverrides = {}) {
     },
     onOpenWikiLink: (target) => {
       calls.wiki.push(target);
+    },
+    onOpenFiles: () => {
+      calls.files += 1;
+    },
+    onDownloadFile: (id) => {
+      calls.downloadFile.push(id);
     },
     ...wiringOverrides,
   };
@@ -601,6 +607,74 @@ describe('mountApp — documents and favorites', () => {
     const { container, ui } = mountDOM();
     ui.update(baseState({ detail: { id: 'd1', title: 't', chips: [], html: '<p>x</p>' } }));
     expect(isHidden($id(container, 'detail-backlinks'))).toBe(true);
+  });
+
+  it('renders the landscape pane with same-category siblings and opens them on tap', () => {
+    const { container, ui, calls } = mountDOM();
+    ui.update(
+      baseState({
+        detail: {
+          id: 'd1',
+          title: '当前笔记',
+          label: 'wiki',
+          chips: [],
+          html: '<p>x</p>',
+          siblings: [
+            { id: 'd1', title: '当前笔记' },
+            { id: 'd2', title: '同分类B' },
+          ],
+        },
+      }),
+    );
+    expect(isHidden($id(container, 'detail-pane'))).toBe(false);
+    expect($id(container, 'detail-pane').textContent).toContain('wiki');
+    expect($id(container, 'detail-pane').textContent).toContain('同分类B');
+    expect(container.querySelector('#detail-pane .pane-item.active').textContent).toContain('当前笔记');
+    container.querySelector('#detail-pane [data-open="d2"]').click();
+    expect(calls.open).toEqual(['d2']);
+  });
+
+  it('hides the landscape pane when there is no meaningful sibling list', () => {
+    const { container, ui } = mountDOM();
+    ui.update(baseState({ detail: { id: 'd1', title: 't', label: 'wiki', chips: [], html: '<p>x</p>', siblings: [] } }));
+    expect(isHidden($id(container, 'detail-pane'))).toBe(true);
+  });
+
+  it('文件传输 sheet opens from the settings row and fires onOpenFiles', () => {
+    const { container, ui, calls } = mountDOM();
+    ui.update(baseState());
+    $id(container, 'setting-files').click();
+    expect($id(container, 'sheet-files').classList.contains('open')).toBe(true);
+    expect(calls.files).toBe(1);
+  });
+
+  it('renders the file list with sizes and download buttons wired to the hook', () => {
+    const { container, ui, calls } = mountDOM();
+    ui.update(
+      baseState({
+        filesList: [
+          { id: 'f1', name: '报告.pdf', size: 2048, mtime: '2026-08-19T00:00:00Z' },
+          { id: 'f2', name: '照片.jpg', size: 1024, mtime: '2026-08-19T00:00:00Z' },
+        ],
+      }),
+    );
+    expect(isHidden($id(container, 'files-empty'))).toBe(true);
+    expect($id(container, 'files-list').textContent).toContain('报告.pdf');
+    container.querySelector('[data-file-id="f1"]').click();
+    expect(calls.downloadFile).toEqual(['f1']);
+  });
+
+  it('shows the empty state when there are no files and disables a downloading row', () => {
+    const { container, ui } = mountDOM();
+    ui.update(baseState({ filesList: [] }));
+    expect(isHidden($id(container, 'files-empty'))).toBe(false);
+
+    ui.update(
+      baseState({ filesList: [{ id: 'f1', name: 'a.pdf', size: 1, mtime: '2026-08-19T00:00:00Z' }], fileDownloadingId: 'f1' }),
+    );
+    const btn = container.querySelector('[data-file-id="f1"]');
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toContain('下载中');
   });
 
   it('back closes the detail and fires onCloseDetail', () => {
