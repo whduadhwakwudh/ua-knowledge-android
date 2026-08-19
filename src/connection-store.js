@@ -26,6 +26,21 @@ export const TOKEN_PATTERN = /^uak_[A-Za-z0-9_-]{43}$/;
 const HTTP_LOCAL_HOSTS = new Set(['localhost', '127.0.0.1']);
 
 /**
+ * True for loopback and private-network hostnames. Self-hosted LAN setups
+ * (a phone on the same Wi-Fi reaching the server via http://192.168.x.x)
+ * rely on this; public http hosts stay rejected.
+ */
+function isPrivateHost(hostname) {
+  const h = hostname.toLowerCase();
+  if (HTTP_LOCAL_HOSTS.has(h) || h.endsWith('.local')) return true;
+  if (/^127\.\d+\.\d+\.\d+$/.test(h)) return true;
+  if (/^192\.168\.\d+\.\d+$/.test(h)) return true;
+  if (/^10\.\d+\.\d+\.\d+$/.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(h)) return true;
+  return false;
+}
+
+/**
  * Normalizes a base URL (removes the trailing slash) and validates it.
  * @returns {{ok: true, value: string} | {ok: false, error: string}}
  */
@@ -51,8 +66,8 @@ export function normalizeBaseUrl(input) {
   if (url.search !== '') {
     return { ok: false, error: 'base URL must not include a query string' };
   }
-  if (url.protocol === 'http:' && !HTTP_LOCAL_HOSTS.has(url.hostname)) {
-    return { ok: false, error: 'insecure http is only allowed for local development hosts' };
+  if (url.protocol === 'http:' && !isPrivateHost(url.hostname)) {
+    return { ok: false, error: 'insecure http is only allowed for local or private-network hosts' };
   }
 
   let value = url.origin;

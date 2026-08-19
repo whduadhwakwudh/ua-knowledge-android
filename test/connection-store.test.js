@@ -79,7 +79,7 @@ describe('normalizeBaseUrl', () => {
     });
   });
 
-  it('allows http only for localhost/127.0.0.1 with an optional explicit port', () => {
+  it('allows http only for localhost/private-network hosts; rejects public http', () => {
     expect(normalizeBaseUrl('http://localhost:8080/kb/')).toEqual({
       ok: true,
       value: 'http://localhost:8080/kb',
@@ -87,6 +87,15 @@ describe('normalizeBaseUrl', () => {
     expect(normalizeBaseUrl('http://127.0.0.1:5173')).toEqual({
       ok: true,
       value: 'http://127.0.0.1:5173',
+    });
+    // 局域网自托管：同 WiFi 手机经 http://192.168.x.x 访问。
+    expect(normalizeBaseUrl('http://192.168.1.50:8790')).toEqual({
+      ok: true,
+      value: 'http://192.168.1.50:8790',
+    });
+    expect(normalizeBaseUrl('http://10.0.0.8:8790')).toEqual({
+      ok: true,
+      value: 'http://10.0.0.8:8790',
     });
     expect(normalizeBaseUrl('http://example.com')).toEqual({
       ok: false,
