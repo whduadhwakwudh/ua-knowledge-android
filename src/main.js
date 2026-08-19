@@ -579,13 +579,32 @@ export async function bootstrapApp(options = {}) {
 
   /* ─── artifacts (Task 8 download hook) ──────────────────── */
   async function downloadArtifact(id) {
-    const entry = artifactById.get(id);
+    let entry = artifactById.get(id);
     if (!entry || !state.baseUrl || !state.token) {
       ui.toast('请先完成连接设置');
       return;
     }
     ui.toast('开始下载…');
     try {
+      // 先拉最新 manifest 刷新 artifact 条目：发布包被替换后 sha256 会变，
+      // 若用上次同步缓存的旧 sha256 校验新文件必然失败（HASH_MISMATCH）。
+      // 拉取失败（如网络抖动）则回退缓存条目继续下载，由哈希校验兜底。
+      if (api) {
+        const fresh = await api.getManifest();
+        const refreshed = (fresh?.entries ?? []).find((e) => e.id === id);
+        if (refreshed) {
+          const next = {
+            id: refreshed.id,
+            title: refreshed.title,
+            relativePath: refreshed.relativePath,
+            sha256: refreshed.sha256,
+            mtime: refreshed.mtime,
+            size: refreshed.size,
+          };
+          artifactById.set(id, next);
+          entry = next;
+        }
+      }
       await downloadAndVerifyApk({
         entry,
         apiBaseUrl: state.baseUrl,
@@ -599,8 +618,8 @@ export async function bootstrapApp(options = {}) {
       notifySystem('APK 下载完成', entry.title);
     } catch (err) {
       if (err && err.code === 'HASH_MISMATCH') {
-        ui.toast('校验失败，已删除文件');
-        notifySystem('APK 下载失败', '内容校验失败，已删除文件');
+        ui.toast('校验失败，已删除文件，请重新同步后重试');
+        notifySystem('APK 下载失败', '内容校验失败，请重新同步后重试');
       } else if (err && err.code === ApiError.UNAUTHORIZED) {
         state.connection = 'auth-error';
         ui.update(state);
