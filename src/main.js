@@ -818,6 +818,28 @@ export async function bootstrapApp(options = {}) {
   });
 
   ui.update(state);
+
+  /* ─── 视口高度兜底（横屏白边修复） ────────────────────────
+     Android WebView 旋转后 100% 高度链不刷新，100dvh 又需 Chrome 108+。
+     用 JS 把实际可用高度写入 --vh CSS 变量（全 WebView 兼容），
+     旋转/尺寸变化时更新，页面高度链消费该变量。 */
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    const applyViewportHeight = () => {
+      try {
+        const vh = window.visualViewport?.height ?? window.innerHeight;
+        if (vh > 0) document.documentElement.style.setProperty('--vh', `${vh}px`);
+      } catch {
+        // 高度兜底是尽力而为，失败不影响应用。
+      }
+    };
+    applyViewportHeight();
+    window.addEventListener('resize', applyViewportHeight);
+    window.addEventListener('orientationchange', () => {
+      // 旋转后尺寸更新有一帧延迟，微延迟重算。
+      setTimeout(applyViewportHeight, 120);
+    });
+  }
+
   if (stored.configured) {
     try {
       await rebuildApi(stored.baseUrl, stored.token);
