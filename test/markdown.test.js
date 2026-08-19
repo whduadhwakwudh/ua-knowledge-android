@@ -148,4 +148,31 @@ describe('renderMarkdown — Obsidian 双链', () => {
     expect(html).toContain('target="_blank"');
     expect(html).toContain('wiki-link');
   });
+
+  it('turns [S0xx] bracket source-number refs into clickable wiki links', () => {
+    const html = renderMarkdown('结论见 [S041] 与 [S024]。');
+    expect(html).toContain('data-wiki-target="S041"');
+    expect(html).toContain('data-wiki-target="S024"');
+    expect(html).not.toContain('[S041]');
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    expect(doc.querySelectorAll('.wiki-link').length).toBe(2);
+  });
+
+  it('turns bare S0xx numbers into wiki links without touching surrounding words', () => {
+    const html = renderMarkdown('来源 S041 是 derivative。S024 与 S054 属 ASR 转写。');
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    expect(doc.querySelectorAll('.wiki-link').length).toBe(3);
+    expect(doc.querySelectorAll('.wiki-link')[0].textContent).toBe('S041');
+    // 普通句子文本保留。
+    expect(doc.body.textContent).toContain('是 derivative');
+  });
+
+  it('does not nest wiki links (double-bracket already consumed, S refs stay in text nodes)', () => {
+    const html = renderMarkdown('见 [[S041|编号 S041 的笔记]]。');
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    // 双链生成一个 wiki-link；锚文本里的 S041 不再生成嵌套链接。
+    expect(doc.querySelectorAll('a.wiki-link a.wiki-link').length).toBe(0);
+    expect(doc.querySelectorAll('a.wiki-link').length).toBe(1);
+    expect(doc.querySelector('a.wiki-link').getAttribute('data-wiki-target')).toBe('S041');
+  });
 });

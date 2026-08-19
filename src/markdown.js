@@ -131,5 +131,48 @@ export function renderMarkdown(markdown) {
       image.removeAttribute('src');
     }
   }
+
+  // 来源编号引用：[S024] / S024（知识库惯例）→ 可点击跳转到 S024-xxx 来源笔记。
+  // 只在非链接的文本节点上处理（双链 [[…]] 已是 <a>，不嵌套）。
+  const S_REF_RE = /\[(S0\d{2})\]|\b(S0\d{2})\b/g;
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      return parent && parent.closest('a') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const textNodes = [];
+  let currentNode = walker.nextNode();
+  while (currentNode !== null) {
+    textNodes.push(currentNode);
+    currentNode = walker.nextNode();
+  }
+  for (const node of textNodes) {
+    const value = node.nodeValue ?? '';
+    S_REF_RE.lastIndex = 0;
+    let match = S_REF_RE.exec(value);
+    if (match === null) continue;
+    const fragment = document.createDocumentFragment();
+    let last = 0;
+    S_REF_RE.lastIndex = 0;
+    while ((match = S_REF_RE.exec(value)) !== null) {
+      if (match.index > last) {
+        fragment.appendChild(document.createTextNode(value.slice(last, match.index)));
+      }
+      const id = match[1] || match[2];
+      const anchor = document.createElement('a');
+      anchor.className = 'wiki-link';
+      anchor.setAttribute('href', '#wiki:' + encodeURIComponent(id));
+      anchor.setAttribute('data-wiki-target', id);
+      anchor.textContent = id;
+      fragment.appendChild(anchor);
+      last = match.index + match[0].length;
+    }
+    if (last < value.length) {
+      fragment.appendChild(document.createTextNode(value.slice(last)));
+    }
+    if (node.parentNode) node.parentNode.replaceChild(fragment, node);
+  }
+
   return document.body.innerHTML;
 }
