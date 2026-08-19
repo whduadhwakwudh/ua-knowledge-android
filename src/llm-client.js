@@ -99,12 +99,24 @@ export function createLlmClient({
     typeof Capacitor !== 'undefined' && typeof Capacitor.getPlatform === 'function' && Capacitor.getPlatform() !== 'web';
   const request = transport ?? (useNative ? nativeTransport : fetchTransport);
 
-  async function ask(question, knowledge = []) {
+  /**
+   * @param {string} question 当前问题
+   * @param {Array} knowledge 本地检索的知识片段 [{title, excerpt, relativePath}]
+   * @param {Array} history 当前对话的历史消息（不含本次问题），
+   *   [{role:'user'|'assistant', content}]，旧→新。
+   */
+  async function ask(question, knowledge = [], history = []) {
     if (!apiKey) {
       throw new LlmError('not_configured', '未配置助手 API Key');
     }
+    const historyMessages = Array.isArray(history)
+      ? history
+          .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim() !== '')
+          .map((m) => ({ role: m.role, content: m.content }))
+      : [];
     const messages = [
       { role: 'system', content: systemPrompt() },
+      ...historyMessages,
       { role: 'user', content: composeUserContent(question, knowledge) },
     ];
     let response;

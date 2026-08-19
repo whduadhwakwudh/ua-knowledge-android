@@ -62,6 +62,48 @@ describe('createLlmClient — 手机内置助手', () => {
     expect(userContent).not.toContain('知识片段');
   });
 
+  it('interleaves conversation history between system and the current question', async () => {
+    let captured = null;
+    const client = createLlmClient({
+      apiKey: 'sk-test-key-12345',
+      transport: async ({ messages }) => {
+        captured = messages;
+        return { status: 200, headers: {}, text: JSON.stringify({ choices: [{ message: { content: 'ok' } }] }) };
+      },
+    });
+    const history = [
+      { role: 'user', content: '第一个问题' },
+      { role: 'assistant', content: '第一个回答' },
+    ];
+    await client.ask('追问', [], history);
+    expect(captured.length).toBe(4); // system + 2 历史 + 当前问题
+    expect(captured[0].role).toBe('system');
+    expect(captured[1]).toEqual({ role: 'user', content: '第一个问题' });
+    expect(captured[2]).toEqual({ role: 'assistant', content: '第一个回答' });
+    expect(captured[3].role).toBe('user');
+    expect(captured[3].content).toContain('追问');
+  });
+
+  it('filters malformed history items but keeps valid turns', async () => {
+    let captured = null;
+    const client = createLlmClient({
+      apiKey: 'sk-test-key-12345',
+      transport: async ({ messages }) => {
+        captured = messages;
+        return { status: 200, headers: {}, text: JSON.stringify({ choices: [{ message: { content: 'ok' } }] }) };
+      },
+    });
+    await client.ask('q', [], [
+      { role: 'user', content: '有效历史' },
+      { role: 'system', content: '非法角色应被过滤' },
+      { role: 'assistant', content: '' },
+      null,
+      { role: 'assistant', content: '  ' },
+    ]);
+    expect(captured.length).toBe(3); // system + 1 有效历史 + 当前
+    expect(captured[1]).toEqual({ role: 'user', content: '有效历史' });
+  });
+
   it('re-throws LlmError from the transport (timeout)', async () => {
     const client = createLlmClient({
       apiKey: 'sk-test-key-12345',

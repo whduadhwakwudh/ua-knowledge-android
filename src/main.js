@@ -686,9 +686,15 @@ export async function bootstrapApp(options = {}) {
     ui.update(state);
     try {
       const knowledge = retrieveKnowledge(trimmed);
+      // 上下文：当前对话的历史（不含刚追加的最新 user 消息），旧→新。
+      // 内置助手（直连 DeepSeek）与服务端 /v1/ask 都支持 history，
+      // 使同一对话内的问题互相关联；新建对话（clearChat）后 history 为空 → 隔离。
+      const history = (state.assistantMessages ?? [])
+        .filter((m) => m !== userMsg && (m.role === 'user' || m.role === 'assistant') && typeof m.text === 'string' && m.text.trim() !== '')
+        .map((m) => ({ role: m.role, content: m.text }));
       const { answer } = llmClient
-        ? await llmClient.ask(trimmed, knowledge)
-        : await api.askQuestion(trimmed, knowledge);
+        ? await llmClient.ask(trimmed, knowledge, history)
+        : await api.askQuestion(trimmed, knowledge, history);
       const reply = { role: 'assistant', text: answer, createdAt: new Date().toISOString() };
       state.assistantMessages = [...state.assistantMessages, reply];
       try {

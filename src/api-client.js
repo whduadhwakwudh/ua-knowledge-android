@@ -417,13 +417,18 @@ export function createApiClient({
    * context (title/excerpt/relativePath chunks from the local cache); the
    * server composes the prompt and calls the LLM provider, and the plaintext
    * provider key never leaves the server.
+   *
+   * `history` carries the current conversation's prior turns so the assistant
+   * is not isolated per question: [{role: 'user'|'assistant', content}],
+   * oldest first, excluding the current question itself. Pass [] for a fresh
+   * conversation (or to omit context entirely).
    */
-  async function askQuestion(question, knowledge = []) {
+  async function askQuestion(question, knowledge = [], history = []) {
     const res = await request('/v1/ask', {
       method: 'POST',
       // Fastify 只解析带 Content-Type: application/json 的 body——缺失会 400/415。
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: { question, knowledge },
+      body: { question, knowledge, history },
       allowedStatuses: [503, 504],
     });
     if (res.status === 503) {

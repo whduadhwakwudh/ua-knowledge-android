@@ -907,8 +907,31 @@ describe('askQuestion()', () => {
     const headerEntries = Object.keys(captured.opts.headers).map((k) => k.toLowerCase());
     expect(headerEntries).toContain('content-type');
     expect(captured.opts.headers['content-type'] ?? captured.opts.headers['Content-Type']).toContain('application/json');
-    expect(JSON.parse(captured.opts.body)).toEqual({ question: '知识库在哪？', knowledge });
+    expect(JSON.parse(captured.opts.body)).toEqual({ question: '知识库在哪？', knowledge, history: [] });
     expect(authHeaderEntries(captured.opts).length).toBe(1);
+  });
+
+  it('sends conversation history with the question for multi-turn context', async () => {
+    let captured;
+    const client = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      fetchImpl: async (url, opts) => {
+        captured = { url, opts };
+        return jsonResponse({ answer: '承接上文继续。' });
+      },
+    });
+    const history = [
+      { role: 'user', content: '介绍一下知识库' },
+      { role: 'assistant', content: '知识库在 wiki/ 下。' },
+    ];
+    const result = await client.askQuestion('那 outputs 呢？', [], history);
+    expect(result.answer).toBe('承接上文继续。');
+    expect(JSON.parse(captured.opts.body)).toEqual({
+      question: '那 outputs 呢？',
+      knowledge: [],
+      history,
+    });
   });
 
   it('never sends the token in the body or URL', async () => {

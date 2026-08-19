@@ -310,6 +310,67 @@ describe('bootstrapApp — assistant ask flow', () => {
     expect(persisted.length).toBe(2);
   });
 
+  it('sends prior conversation turns as history so follow-ups keep context', async () => {
+    const { window } = dom;
+    const container = window.document.getElementById('screen');
+    const adapter = createWebAdapter();
+    const store = createConnectionStore(adapter);
+    await store.save({ baseUrl: VALID_BASE, token: FAKE_TOKEN });
+    await seedCache();
+
+    const askBodies = [];
+    const app = await bootstrapApp({
+      container,
+      isNative: false,
+      connectionStoreImpl: store,
+      dbImpl: db,
+      randomImpl: () => 0,
+      fetchImpl: async (url, opts) => {
+        if (String(url).endsWith('/v1/ask')) {
+          askBodies.push(JSON.parse(opts.body));
+          return new Response(JSON.stringify({ answer: '来自助手第 ' + askBodies.length + ' 轮回答' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        throw new Error('unexpected fetch: ' + String(url));
+      },
+    });
+
+    const input = container.querySelector('#chat-input');
+    // 第一轮：无历史
+    input.value = '第一个问题';
+    container.querySelector('#chat-send').click();
+    await vi.waitFor(() => {
+      expect(app.state.assistantMessages.length).toBe(2);
+    });
+    expect(askBodies[0].history).toEqual([]);
+
+    // 第二轮：应带上第一轮的两条消息（user + assistant），且不含本次问题
+    input.value = '第二个问题';
+    container.querySelector('#chat-send').click();
+    await vi.waitFor(() => {
+      expect(app.state.assistantMessages.length).toBe(4);
+    });
+    expect(askBodies[1].history).toEqual([
+      { role: 'user', content: '第一个问题' },
+      { role: 'assistant', content: '来自助手第 1 轮回答' },
+    ]);
+    expect(askBodies[1].question).toBe('第二个问题');
+
+    // 新建对话后：历史清空，下一轮不再携带旧对话
+    container.querySelector('#btn-clear-chat').click();
+    await vi.waitFor(() => {
+      expect(app.state.assistantMessages.length).toBe(0);
+    });
+    input.value = '新对话第一个问题';
+    container.querySelector('#chat-send').click();
+    await vi.waitFor(() => {
+      expect(app.state.assistantMessages.length).toBe(2);
+    });
+    expect(askBodies[2].history).toEqual([]);
+  });
+
   it('surfaces assistant_unavailable (503) as a toast without wedging the app', async () => {
     const { window } = dom;
     const container = window.document.getElementById('screen');
