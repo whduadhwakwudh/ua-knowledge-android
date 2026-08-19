@@ -96,8 +96,9 @@ export function createSyncEngine({ api, db }) {
     }
 
     // ---- phase: download (documents only; artifacts are metadata-only) ----
-    // 逐篇上报 downloaded 计数，让 UI 进度条随下载逐步推进。
-    report({ phase: 'download', revision, downloaded: 0 });
+    // 逐篇上报 downloaded 计数，且 total = 本次待下载文档数（不是 manifest
+    // 总条目数）——进度条按本次下载份数推进，最终到 100%。
+    report({ phase: 'download', revision, downloaded: 0, total: toFetch.length });
     const contents = [];
     for (let i = 0; i < toFetch.length; i += 1) {
       // No etag is persisted, so every changed/new document is a full fetch.
@@ -108,7 +109,7 @@ export function createSyncEngine({ api, db }) {
         throw new ApiError(ApiError.INTEGRITY, 'document unexpectedly not modified');
       }
       contents.push({ sha256: toFetch[i].sha256, text: fetched.text });
-      report({ phase: 'download', revision, downloaded: i + 1 });
+      report({ phase: 'download', revision, downloaded: i + 1, total: toFetch.length });
     }
 
     // ---- phase: verify ----------------------------------------------------

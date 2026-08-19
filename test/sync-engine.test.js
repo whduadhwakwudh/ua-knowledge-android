@@ -370,13 +370,14 @@ describe('phase events', () => {
     const events = [];
     const result = await engine(api).sync({ onPhase: (phase) => events.push(phase) });
 
-    // 下载阶段逐篇上报进度：开始 0 + 2 篇文档 → 3 个 download 事件。
+    // 下载阶段逐篇上报进度：开始 0 + 2 篇文档 → 3 个 download 事件；
+    // total = 本次待下载文档数（进度条分母），而非 manifest 总条目数。
     expect(events.map((e) => e.phase)).toEqual(['manifest', 'download', 'download', 'download', 'verify', 'commit', 'complete']);
 
     expect(events[0]).toMatchObject({ phase: 'manifest', revision: REV_1, total: 3 });
-    expect(events[1]).toMatchObject({ phase: 'download', revision: REV_1, downloaded: 0 });
-    expect(events[2]).toMatchObject({ phase: 'download', revision: REV_1, downloaded: 1 });
-    expect(events[3]).toMatchObject({ phase: 'download', revision: REV_1, downloaded: 2 });
+    expect(events[1]).toMatchObject({ phase: 'download', revision: REV_1, downloaded: 0, total: 2 });
+    expect(events[2]).toMatchObject({ phase: 'download', revision: REV_1, downloaded: 1, total: 2 });
+    expect(events[3]).toMatchObject({ phase: 'download', revision: REV_1, downloaded: 2, total: 2 });
     expect(events[4]).toMatchObject({ phase: 'verify', revision: REV_1, verified: 2 });
     expect(events[5]).toMatchObject({ phase: 'commit', revision: REV_1 });
     expect(events[6]).toMatchObject({
