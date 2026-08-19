@@ -97,6 +97,11 @@ describe('normalizeBaseUrl', () => {
       ok: true,
       value: 'http://10.0.0.8:8790',
     });
+    // Tailscale 虚拟局域网（远程同步）：100.x 段。
+    expect(normalizeBaseUrl('http://100.101.102.103:8790')).toEqual({
+      ok: true,
+      value: 'http://100.101.102.103:8790',
+    });
     expect(normalizeBaseUrl('http://example.com')).toEqual({
       ok: false,
       error: expect.any(String),

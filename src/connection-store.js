@@ -29,6 +29,8 @@ const HTTP_LOCAL_HOSTS = new Set(['localhost', '127.0.0.1']);
  * True for loopback and private-network hostnames. Self-hosted LAN setups
  * (a phone on the same Wi-Fi reaching the server via http://192.168.x.x)
  * rely on this; public http hosts stay rejected.
+ * 100.x is the CGNAT range used by Tailscale/ZeroTier virtual LANs, so a
+ * phone can reach a self-hosted server over the tunnel as http://100.x.x.x.
  */
 function isPrivateHost(hostname) {
   const h = hostname.toLowerCase();
@@ -37,6 +39,8 @@ function isPrivateHost(hostname) {
   if (/^192\.168\.\d+\.\d+$/.test(h)) return true;
   if (/^10\.\d+\.\d+\.\d+$/.test(h)) return true;
   if (/^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(h)) return true;
+  // Tailscale / ZeroTier CGNAT 段 100.64.0.0/10（宽松匹配 100.x）。
+  if (/^100\.\d+\.\d+\.\d+$/.test(h)) return true;
   return false;
 }
 
