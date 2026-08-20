@@ -1,5 +1,10 @@
 {
   "appId": "io.ua.knowledgebase",
   "appName": "UA",
-  "webDir": "www"
+  "webDir": "www",
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "disable"
+    }
+  }
 }

@@ -3,6 +3,7 @@ package io.ua.knowledgebase;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
+import android.view.WindowManager;
 
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -41,6 +42,24 @@ public class MainActivity extends BridgeActivity {
      * 仅隐藏状态栏；底部导航栏（手势条）保留，避免影响系统导航习惯。
      */
     private void applyImmersiveMode() {
+        // Hiding the status bar alone is insufficient on phones with a notch
+        // or punch-hole camera. The default cutout policy may letterbox the
+        // entire Activity at the camera's horizontal line, leaving a solid
+        // strip in both portrait and landscape. Explicitly let the window
+        // paint behind that physical area; CSS safe-area insets still keep
+        // interactive content clear of the camera itself.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            WindowManager.LayoutParams attributes = getWindow().getAttributes();
+            attributes.layoutInDisplayCutoutMode =
+                    DisplayEdgePolicy.cutoutModeForApi(Build.VERSION.SDK_INT);
+            getWindow().setAttributes(attributes);
+        }
+
+        // Apply edge-to-edge on every supported Android version. Previously
+        // this ran only on Android 11+, so Android 9/10 could still reserve
+        // the cutout/status-bar region even though FULLSCREEN was requested.
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             // Android 10-：旧 API，需要 IMMERSIVE_STICKY 标志。
             getWindow().getDecorView().setSystemUiVisibility(
@@ -51,7 +70,6 @@ public class MainActivity extends BridgeActivity {
             return;
         }
         // Android 11+：WindowInsetsControllerCompat 是推荐方式。
-        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         WindowInsetsControllerCompat controller =
                 WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
         if (controller == null) {

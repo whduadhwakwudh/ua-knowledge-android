@@ -156,10 +156,13 @@ describe('extractAnswer', () => {
 });
 
 describe('systemPrompt', () => {
-  it('demands source attribution in Chinese', () => {
+  it('requires hybrid answers that distinguish vault evidence from model knowledge', () => {
     const prompt = systemPrompt();
     expect(prompt).toContain('知识片段');
     expect(prompt).toContain('来源');
+    expect(prompt).toContain('主动结合');
+    expect(prompt).toContain('模型通用知识');
+    expect(prompt).toContain('未联网核验');
     expect(prompt).toContain('raw');
   });
 });

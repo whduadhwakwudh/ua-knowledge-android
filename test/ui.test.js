@@ -412,6 +412,7 @@ describe('mountApp — assistant chat', () => {
     // 顶栏标题严格居中（topbar-center），右侧仅新建对话按钮。
     expect($id(container, 'view-assistant').querySelector('.topbar-center .topbar-title')).toBeTruthy();
     expect(isHidden($id(container, 'chat-empty-wrap'))).toBe(false);
+    expect($id(container, 'chat-empty').textContent).toContain('模型通用知识');
   });
 
   it('renders user and assistant bubbles from history (markdown-rendered answer)', () => {
@@ -969,5 +970,23 @@ describe('mountApp — tabs, theme, sheets and toast', () => {
     const { container, ui } = mountDOM();
     ui.update(baseState());
     expect($id(container, 'home-greeting').textContent.trim().length).toBeGreaterThan(0);
+  });
+});
+
+describe('landscape safe-area layout', () => {
+  it('keeps the full-screen surface flush with the camera-side edge', () => {
+    const start = INDEX_HTML.indexOf('@media (orientation: landscape)');
+    const end = INDEX_HTML.indexOf('/* 桌面壳预览时', start);
+    const landscapeCss = INDEX_HTML.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    expect(landscapeCss).not.toMatch(
+      /\.screen\s*\{[^}]*padding-left:\s*env\(safe-area-inset-left\)/s,
+    );
+    expect(landscapeCss).toMatch(/\.screen\s*\{[^}]*padding-left:\s*0/s);
+    expect(landscapeCss).toContain(
+      'padding-left: max(20px, env(safe-area-inset-left))',
+    );
   });
 });

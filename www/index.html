@@ -9,7 +9,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=0.5, maximum-scale=5, user-scalable=yes" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=0.5, maximum-scale=5, user-scalable=yes, viewport-fit=cover" />
   <!--
     Content Security Policy (defense in depth): the app ships no inline
     script — all logic lives in ./assets/app.js — so scripts are restricted
@@ -781,14 +781,39 @@
     /* ─── 横屏适配：内容限宽居中 + 左右安全区 + 详情分栏 ─────────── */
     @media (orientation: landscape) {
       .screen {
-        /* 覆盖竖屏遗留的上下 padding，避免横屏顶部/底部额外留白 */
+        /* 全屏表面必须覆盖到摄像头侧边缘。把 safe-area 加在这里会
+           缩小所有绝对定位层，直接露出左侧底层背景形成整条白带。 */
         padding-top: env(safe-area-inset-top);
         padding-bottom: env(safe-area-inset-bottom);
-        padding-left: env(safe-area-inset-left);
-        padding-right: env(safe-area-inset-right);
+        padding-left: 0;
+        padding-right: 0;
       }
-      .pad { max-width: 760px; margin-inline: auto; width: 100%; }
+      /* 只把可交互内容移出挖孔，容器背景仍然绘制到屏幕边缘。 */
+      .pad {
+        max-width: 760px; margin-inline: auto; width: 100%;
+        padding-left: max(20px, env(safe-area-inset-left));
+        padding-right: max(20px, env(safe-area-inset-right));
+      }
       .topbar, .tabbar, .chat-input-bar { max-width: 820px; margin-inline: auto; width: 100%; }
+      .topbar {
+        padding-left: max(14px, env(safe-area-inset-left));
+        padding-right: max(14px, env(safe-area-inset-right));
+      }
+      .tabbar {
+        padding-left: max(8px, env(safe-area-inset-left));
+        padding-right: max(8px, env(safe-area-inset-right));
+      }
+      .chat-input-bar {
+        padding-left: max(14px, env(safe-area-inset-left));
+        padding-right: max(14px, env(safe-area-inset-right));
+      }
+      .detail-nav {
+        padding-left: max(6px, env(safe-area-inset-left));
+        padding-right: max(6px, env(safe-area-inset-right));
+      }
+      #detail-pane {
+        padding-left: env(safe-area-inset-left);
+      }
       .detail-scroll .pad { max-width: 860px; }
       .detail-body { max-width: 720px; margin-inline: auto; }
       .chat-list { max-width: 820px; margin-inline: auto; width: 100%; }
@@ -1013,7 +1038,7 @@
                 <button class="setting-row" id="setting-about" data-od-id="setting-about">
                   <span class="set-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><circle cx="12" cy="7.6" r="0.7"/></svg></span>
                   <span class="set-label">关于</span>
-                  <span class="set-sub">UA 2.2.1</span>
+                  <span class="set-sub">UA 2.3.3</span>
                   <svg class="chevron" viewBox="0 0 24 24" aria-hidden><path d="M9 5.5 15.5 12 9 18.5"/></svg>
                 </button>
               </div>
@@ -1036,8 +1061,8 @@
               <section class="pad" style="margin-top: 26px;" id="chat-empty-wrap">
                 <div class="empty-card" id="chat-empty">
                   <svg class="ec-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v11H9.5l-3.5 3v-3H4z"/><path d="M8.5 10h7M8.5 13h4.5"/></svg>
-                  <h3>向你的知识库提问</h3>
-                  <p>助手会优先从已同步的 wiki / outputs 笔记中检索相关内容作答，并标注来源。连接并同步后即可使用。</p>
+                  <h3>知识库 + 外部知识</h3>
+                  <p>助手会优先读取已同步的 wiki / outputs / raw，再结合模型通用知识补充回答，并区分库内来源与外部内容。</p>
                 </div>
               </section>
             </div>
@@ -1185,7 +1210,7 @@
             <span class="grabber" aria-hidden="true"></span>
             <div class="about-mark">U</div>
             <h2 class="sheet-title" id="sheet-about-title" style="text-align:center;">UA</h2>
-            <p class="sheet-sub meta" style="text-align:center;">版本 2.2.1</p>
+            <p class="sheet-sub meta" style="text-align:center;">版本 2.3.3</p>
             <p class="about-line">随手记录 · 随时检索 · 收藏沉淀</p>
             <p class="about-text meta">个人知识库的移动端入口。数据本地优先，支持多端同步。</p>
             <div class="sheet-content" style="margin-top: 14px;">
