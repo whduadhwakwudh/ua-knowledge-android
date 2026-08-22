@@ -215,7 +215,7 @@ export async function openKnowledgeDb() {
    * Append one assistant message (role 'user' | 'assistant') and prune to the
    * newest MAX_ASSISTANT_MESSAGES entries. Invalid records fail closed.
    */
-  async function addAssistantMessage({ role, text, createdAt }) {
+  async function addAssistantMessage({ role, text, trace, createdAt }) {
     if (role !== 'user' && role !== 'assistant') {
       throw new TypeError('assistant message role must be user or assistant');
     }
@@ -226,7 +226,22 @@ export async function openKnowledgeDb() {
       typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const record = { id, role, text, createdAt: typeof createdAt === 'string' ? createdAt : new Date().toISOString() };
+    const safeTrace = Array.isArray(trace)
+      ? trace
+          .filter((step) => step && typeof step.label === 'string' && step.label.trim() !== '')
+          .slice(0, 12)
+          .map((step) => ({
+            label: step.label.slice(0, 200),
+            status: ['done', 'active', 'stopped'].includes(step.status) ? step.status : 'done',
+          }))
+      : undefined;
+    const record = {
+      id,
+      role,
+      text,
+      ...(safeTrace?.length ? { trace: safeTrace } : {}),
+      createdAt: typeof createdAt === 'string' ? createdAt : new Date().toISOString(),
+    };
     const tx = db.transaction('assistantMessages', 'readwrite');
     const store = tx.objectStore('assistantMessages');
     await store.put(record);

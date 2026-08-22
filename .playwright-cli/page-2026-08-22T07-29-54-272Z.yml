@@ -1,0 +1,20 @@
+- generic [ref=e4]:
+  - main [ref=e55]:
+    - generic [ref=e56]:
+      - generic:
+        - paragraph: AGENTS.md 驱动
+        - heading "智能助手" [level=1]
+      - button "新建对话" [ref=e57] [cursor=pointer]
+    - generic [ref=e65]:
+      - heading "通用大模型助手" [level=3] [ref=e69]
+      - paragraph [ref=e70]: 每次提问先完整读取根目录 AGENTS.md，其余按正常大模型能力回答。生成时可查看执行摘要，也可随时停止。
+    - generic [ref=e71]:
+      - textbox "向智能助手提问" [ref=e72]:
+        - /placeholder: 输入问题，回车发送…
+      - button "发送" [ref=e73] [cursor=pointer]
+  - navigation "主导航" [ref=e39]:
+    - button "首页" [ref=e40] [cursor=pointer]
+    - button "收藏" [ref=e44] [cursor=pointer]
+    - button "助手" [active] [ref=e47] [cursor=pointer]
+    - button "我的" [ref=e51] [cursor=pointer]
+  - status

@@ -284,6 +284,18 @@ describe('assistant message history', () => {
     expect(list[1].text).toBe('你好！');
   });
 
+  it('persists a safe assistant execution trace with the answer', async () => {
+    await kb.addAssistantMessage({
+      role: 'assistant',
+      text: '完成。',
+      trace: [{ label: '已读取 AGENTS.md', status: 'done' }],
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    expect((await kb.listAssistantMessages())[0].trace).toEqual([
+      { label: '已读取 AGENTS.md', status: 'done' },
+    ]);
+  });
+
   it('assigns a unique id and a default createdAt when omitted', async () => {
     const record = await kb.addAssistantMessage({ role: 'user', text: 'x' });
     expect(typeof record.id).toBe('string');

@@ -1,0 +1,27 @@
+- generic [ref=e4]:
+  - main [ref=e6]:
+    - generic [ref=e7]:
+      - button "打开侧边栏" [ref=e8] [cursor=pointer]
+      - generic [ref=e11]:
+        - paragraph [ref=e12]: 8/22周六 · 离线可用
+        - heading "知识库" [level=1] [ref=e13]
+      - button "我的" [ref=e14] [cursor=pointer]
+    - searchbox "搜索全部笔记" [ref=e21]
+    - generic [ref=e23]:
+      - heading "尚未连接知识库" [level=3] [ref=e27]
+      - paragraph [ref=e28]: 填写服务器地址与设备令牌，即可同步并离线浏览全部内容。
+      - button "去连接" [ref=e29] [cursor=pointer]
+    - generic [ref=e30]:
+      - generic [ref=e31]:
+        - heading "最近笔记" [level=2] [ref=e32]
+        - generic [ref=e33]:
+          - generic [ref=e34]: 0 篇
+          - button "换一批随机排序" [ref=e35] [cursor=pointer]: 换一批
+      - navigation "文件夹路径" [ref=e37]:
+        - button "知识库" [ref=e38] [cursor=pointer]
+  - navigation "主导航" [ref=e39]:
+    - button "首页" [ref=e40] [cursor=pointer]
+    - button "收藏" [ref=e44] [cursor=pointer]
+    - button "助手" [ref=e47] [cursor=pointer]
+    - button "我的" [ref=e51] [cursor=pointer]
+  - status

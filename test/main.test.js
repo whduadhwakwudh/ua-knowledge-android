@@ -241,16 +241,30 @@ describe('bootstrapApp — assistant ask flow', () => {
       sha256: 'h' + '0'.repeat(63),
       title: '同步协议',
     };
+    const agentsText = '# AGENTS\n先阅读工作区规则，再执行用户请求。';
+    const agentsEntry = {
+      id: 'a'.repeat(43),
+      relativePath: 'AGENTS.md',
+      kind: 'document',
+      mime: 'text/markdown; charset=utf-8',
+      size: agentsText.length,
+      mtime: '2026-08-18T00:00:00Z',
+      sha256: 'a'.repeat(64),
+      title: 'AGENTS',
+    };
     const manifest = {
       schemaVersion: 1,
       generatedAt: '2026-08-18T00:00:00Z',
       revision: 'r' + 'f'.repeat(63),
-      entries: [entry],
+      entries: [agentsEntry, entry],
     };
     await db.commitRevision({
       revision: manifest.revision,
       manifest,
-      contents: [{ sha256: entry.sha256, text: SYNC_BODY }],
+      contents: [
+        { sha256: agentsEntry.sha256, text: agentsText },
+        { sha256: entry.sha256, text: SYNC_BODY },
+      ],
     });
   }
 
@@ -304,6 +318,7 @@ describe('bootstrapApp — assistant ask flow', () => {
     expect(askBody.question).toBe('同步的缓存多久失效？');
     expect(askBody.knowledge.length).toBeGreaterThan(0);
     expect(askBody.knowledge[0].relativePath).toBe('wiki/同步协议.md');
+    expect(askBody.agentInstructions).toContain('先阅读工作区规则');
 
     // 对话历史已持久化到 IndexedDB
     const persisted = await db.listAssistantMessages();
@@ -452,6 +467,37 @@ describe('bootstrapApp — assistant ask flow', () => {
     expect(transportCall.apiKey).toBe('sk-phone-key-12345');
     expect(transportCall.messages[1].content).toContain('缓存多久失效？');
     expect(transportCall.messages[1].content).toContain('wiki/同步协议.md');
+    expect(transportCall.messages[0].content).toContain('先阅读工作区规则');
+  });
+
+  it('stops a pending answer and ignores any late model result', async () => {
+    const { window } = dom;
+    const container = window.document.getElementById('screen');
+    const adapter = createWebAdapter();
+    const store = createConnectionStore(adapter);
+    await store.save({ baseUrl: VALID_BASE, token: FAKE_TOKEN, llmApiKey: 'sk-phone-key-12345' });
+    await seedCache();
+
+    const app = await bootstrapApp({
+      container,
+      isNative: false,
+      connectionStoreImpl: store,
+      dbImpl: db,
+      llmTransport: async () => new Promise(() => {}),
+      fetchImpl: async () => { throw new Error('server must not be called'); },
+    });
+    let toast = '';
+    app.ui.toast = (message) => { toast = message; };
+    const input = container.querySelector('#chat-input');
+    input.value = '请长篇回答';
+    container.querySelector('#chat-send').click();
+    await vi.waitFor(() => expect(app.state.assistantAsking).toBe(true));
+    expect(app.state.assistantTrace.map((step) => step.label)).toContain('已完整读取 AGENTS.md');
+
+    container.querySelector('#chat-send').click();
+    await vi.waitFor(() => expect(app.state.assistantAsking).toBe(false));
+    expect(app.state.assistantMessages.map((m) => m.role)).toEqual(['user']);
+    expect(toast).toContain('已停止回答');
   });
 });
 

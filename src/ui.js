@@ -25,6 +25,7 @@
 
 import { normalizeBaseUrl, validateToken, validateLlmApiKey } from './connection-store.js';
 import { renderMarkdown } from './markdown.js';
+import { findFolder, folderBreadcrumbs } from './folder-tree.js';
 
 const HIDDEN = 'hidden';
 const STAR_PATH = 'M12 3.6l2.56 5.2 5.73.83-4.14 4.04.98 5.7L12 16.72l-5.13 2.7.98-5.7L3.7 9.63l5.73-.83L12 3.6z';
@@ -85,6 +86,7 @@ export function mountApp(container, wiring = {}) {
   let toastTimer = null;
   let lastFocus = null;
   let currentDetailId = null;
+  const expandedSidebarFolders = new Set();
 
   /* ─── toast ─────────────────────────────────────────────── */
   function toast(message, ms = 2400) {
@@ -303,40 +305,79 @@ export function mountApp(container, wiring = {}) {
 
   /* ─── sidebar（Obsidian 风格左侧文件树抽屉） ─────────────── */
   function renderSidebar(state) {
-    const cats = state.categories ?? [];
     const allDocs = state.allDocuments ?? state.documents ?? [];
     const current = state.category ?? 'all';
-    const counts = new Map();
-    for (const d of allDocs) counts.set(d.label, (counts.get(d.label) ?? 0) + 1);
     const nav = $('#sidebar-cats');
     if (nav) {
-      const items = [{ value: 'all', label: '全部笔记', count: allDocs.length }].concat(
-        cats.map((c) => ({ value: c, label: c, count: counts.get(c) ?? 0 })),
-      );
+      const items = [{ value: 'all', label: '知识库', count: allDocs.length, depth: 0, hasChildren: false }];
+      const appendFolders = (folders, depth) => {
+        for (const folder of folders ?? []) {
+          const hasChildren = (folder.folders?.length ?? 0) > 0;
+          items.push({ value: folder.path, label: folder.name, count: folder.count, depth, hasChildren });
+          if (hasChildren && expandedSidebarFolders.has(folder.path)) {
+            appendFolders(folder.folders, depth + 1);
+          }
+        }
+      };
+      if (state.folderTree) appendFolders(state.folderTree.folders, 1);
+      else {
+        for (const category of state.categories ?? []) {
+          items.push({
+            value: category,
+            label: category,
+            count: allDocs.filter((d) => d.label === category).length,
+            depth: 1,
+            hasChildren: false,
+          });
+        }
+      }
       nav.innerHTML = items
         .map((item) => {
-          const icon =
-            item.value === 'all'
-              ? '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'
-              : '<path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4"/>';
+          const expanded = item.hasChildren && expandedSidebarFolders.has(item.value);
+          const rowAction = item.hasChildren
+            ? ' data-folder-toggle="' +
+              esc(item.value) +
+              '" aria-expanded="' +
+              (expanded ? 'true' : 'false') +
+              '" aria-label="' +
+              (expanded ? '收起 ' : '展开 ') +
+              esc(item.label) +
+              '"'
+            : ' data-category="' + esc(item.value) + '" aria-pressed="' + (current === item.value ? 'true' : 'false') + '"';
+          const leading = item.hasChildren
+            ? '<svg class="sidebar-inline-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg>'
+            : '<span class="sidebar-inline-placeholder" aria-hidden="true"></span>';
+          const openFolder = item.hasChildren
+            ? '<button class="sidebar-open-folder" data-open-folder="' +
+              esc(item.value) +
+              '" data-category="' +
+              esc(item.value) +
+              '" aria-label="进入 ' +
+              esc(item.label) +
+              ' 目录"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></button>'
+            : '';
           return (
+            '<div class="sidebar-tree-row" data-depth="' +
+            item.depth +
+            '" style="--tree-indent:' +
+            Math.min(item.depth, 5) * 12 +
+            'px">' +
             '<button class="sidebar-cat' +
             (current === item.value ? ' active' : '') +
-            '" data-category="' +
-            esc(item.value) +
-            '" aria-pressed="' +
-            (current === item.value ? 'true' : 'false') +
-            '">' +
-            '<svg viewBox="0 0 24 24" aria-hidden="true">' +
-            icon +
-            '</svg>' +
+            '"' +
+            rowAction +
+            '>' +
+            leading +
+            '<svg class="sidebar-folder-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>' +
             '<span class="cat-name">' +
             esc(item.label) +
             '</span>' +
             '<span class="cat-count">' +
             item.count +
             '</span>' +
-            '</button>'
+            '</button>' +
+            openFolder +
+            '</div>'
           );
         })
         .join('');
@@ -347,9 +388,52 @@ export function mountApp(container, wiring = {}) {
     }
   }
 
+  function renderFolderBrowser(state, searching) {
+    const wrap = $('#folder-browser');
+    if (!wrap) return;
+    const tree = state.folderTree;
+    const folderPath = state.category === 'all' ? '' : (state.category ?? '');
+    const folder = findFolder(tree, folderPath);
+    toggleHidden(wrap, searching || !folder);
+    if (!folder) return;
+
+    const breadcrumbs = folderBreadcrumbs(folderPath);
+    const crumbs = $('#folder-breadcrumbs');
+    if (crumbs) {
+      crumbs.innerHTML = breadcrumbs
+        .map((item, index) =>
+          '<button class="folder-crumb" data-category="' +
+          esc(item.path === '' ? 'all' : item.path) +
+          '"' +
+          (index === breadcrumbs.length - 1 ? ' aria-current="page"' : '') +
+          '>' +
+          esc(item.label) +
+          '</button>',
+        )
+        .join('<span class="folder-sep">›</span>');
+    }
+    const list = $('#folder-list');
+    if (list) {
+      list.innerHTML = (folder.folders ?? [])
+        .map(
+          (child) =>
+            '<button class="folder-card" data-category="' +
+            esc(child.path) +
+            '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="folder-card-name">' +
+            esc(child.name) +
+            '</span><span class="folder-card-count">' +
+            child.count +
+            '</span><svg class="folder-card-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 6 6-6 6"/></svg></button>',
+        )
+        .join('');
+    }
+  }
+
   function openSidebar() {
     const layer = $('#sidebar-layer');
     if (!layer) return;
+    expandedSidebarFolders.clear();
+    renderSidebar(state);
     layer.classList.add('open');
     layer.setAttribute('aria-hidden', 'false');
   }
@@ -418,6 +502,7 @@ export function mountApp(container, wiring = {}) {
     toggleHidden($('#auth-error-wrap'), state.connection !== 'auth-error');
 
     renderCategoryChips(state);
+    renderFolderBrowser(state, searching);
     // 「换一批」只在阅读态显示；搜索态结果按相关度排列，不随机。
     toggleHidden($('#btn-shuffle'), searching);
 
@@ -694,13 +779,31 @@ export function mountApp(container, wiring = {}) {
 
     toggleHidden(emptyWrap, messages.length > 0 || asking);
     if (list) {
+      const traceHtml = (trace) =>
+        '<details class="assistant-trace"><summary>思考过程</summary><ol>' +
+        trace
+          .map(
+            (step) =>
+              '<li data-status="' + esc(step.status ?? 'done') + '">' + esc(step.label ?? '') + '</li>',
+          )
+          .join('') +
+        '</ol></details>';
       const items = messages.map((m) => {
         if (m.role === 'user') {
           return '<div class="chat-msg user">' + esc(m.text) + '</div>';
         }
-        return '<div class="chat-msg assistant detail-body">' + renderMarkdown(m.text ?? '') + '</div>';
+        return (
+          '<div class="chat-msg assistant detail-body">' +
+          (Array.isArray(m.trace) && m.trace.length > 0 ? traceHtml(m.trace) : '') +
+          renderMarkdown(m.text ?? '') +
+          '</div>'
+        );
       });
       if (asking) {
+        const trace = state.assistantTrace ?? [];
+        if (trace.length > 0) {
+          items.push(traceHtml(trace).replace('<details ', '<details open '));
+        }
         items.push('<div class="chat-msg typing"><span class="t-dot"></span><span class="t-dot"></span><span class="t-dot"></span></div>');
       }
       list.innerHTML = items.join('');
@@ -708,7 +811,14 @@ export function mountApp(container, wiring = {}) {
       if (scroll) scroll.scrollTop = scroll.scrollHeight;
     }
     if (input) input.disabled = asking;
-    if (sendBtn) sendBtn.disabled = asking;
+    if (sendBtn) {
+      sendBtn.disabled = false;
+      sendBtn.classList.toggle('stop-btn', asking);
+      sendBtn.setAttribute('aria-label', asking ? '停止回答' : '发送');
+      sendBtn.innerHTML = asking
+        ? '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>'
+        : '<svg viewBox="0 0 24 24"><path d="M4 12 20 4l-4.5 16-3.5-6.5L4 12z"/></svg>';
+    }
   }
 
   /* ─── rendering: files（文件传输） ──────────────────────── */
@@ -846,6 +956,10 @@ export function mountApp(container, wiring = {}) {
   /* ─── assistant chat ────────────────────────────────────── */
   function submitChat() {
     const input = $('#chat-input');
+    if (state.assistantAsking) {
+      wiring.onStopQuestion?.();
+      return;
+    }
     if (!input || input.disabled) return;
     const question = input.value.trim();
     if (question === '') return;
@@ -934,6 +1048,29 @@ export function mountApp(container, wiring = {}) {
     const wikiLink = e.target.closest('[data-wiki-target]');
     if (wikiLink) {
       wiring.onOpenWikiLink?.(wikiLink.getAttribute('data-wiki-target'));
+      return;
+    }
+    const folderToggle = e.target.closest('[data-folder-toggle]');
+    if (folderToggle) {
+      const folderPath = folderToggle.dataset.folderToggle;
+      const parentPath = folderPath.includes('/') ? folderPath.slice(0, folderPath.lastIndexOf('/')) : '';
+      const collapseBranch = (branchPath) => {
+        for (const expandedPath of [...expandedSidebarFolders]) {
+          if (expandedPath === branchPath || expandedPath.startsWith(`${branchPath}/`)) {
+            expandedSidebarFolders.delete(expandedPath);
+          }
+        }
+      };
+      if (expandedSidebarFolders.has(folderPath)) {
+        collapseBranch(folderPath);
+      } else {
+        for (const expandedPath of [...expandedSidebarFolders]) {
+          const expandedParent = expandedPath.includes('/') ? expandedPath.slice(0, expandedPath.lastIndexOf('/')) : '';
+          if (expandedParent === parentPath && expandedPath !== folderPath) collapseBranch(expandedPath);
+        }
+        expandedSidebarFolders.add(folderPath);
+      }
+      renderSidebar(state);
       return;
     }
     const category = e.target.closest('[data-category]');

@@ -84,6 +84,34 @@ describe('createLlmClient — 手机内置助手', () => {
     expect(captured[3].content).toContain('追问');
   });
 
+  it('reads the complete AGENTS.md as the only workspace instruction layer', async () => {
+    let captured = null;
+    const client = createLlmClient({
+      apiKey: 'sk-test-key-12345',
+      transport: async ({ messages }) => {
+        captured = messages;
+        return { status: 200, headers: {}, text: JSON.stringify({ choices: [{ message: { content: 'ok' } }] }) };
+      },
+    });
+    const agents = '# 工作区规则\n先查证，再执行。\n其余能力保持正常。';
+    await client.ask('帮我规划', [], [], { agentInstructions: agents });
+    expect(captured[0].role).toBe('system');
+    expect(captured[0].content).toContain(agents);
+    expect(captured[0].content).toContain('正常通用大模型');
+    expect(captured[0].content).toContain('除 AGENTS.md 外');
+  });
+
+  it('cancels a pending answer immediately when the caller aborts', async () => {
+    const controller = new AbortController();
+    const client = createLlmClient({
+      apiKey: 'sk-test-key-12345',
+      transport: async () => new Promise(() => {}),
+    });
+    const pending = client.ask('停下', [], [], { signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+  });
+
   it('filters malformed history items but keeps valid turns', async () => {
     let captured = null;
     const client = createLlmClient({
@@ -156,13 +184,11 @@ describe('extractAnswer', () => {
 });
 
 describe('systemPrompt', () => {
-  it('requires hybrid answers that distinguish vault evidence from model knowledge', () => {
-    const prompt = systemPrompt();
-    expect(prompt).toContain('知识片段');
-    expect(prompt).toContain('来源');
-    expect(prompt).toContain('主动结合');
-    expect(prompt).toContain('模型通用知识');
-    expect(prompt).toContain('未联网核验');
-    expect(prompt).toContain('raw');
+  it('keeps the assistant general-purpose and scopes instructions to AGENTS.md', () => {
+    const prompt = systemPrompt('# 用户协议');
+    expect(prompt).toContain('正常通用大模型');
+    expect(prompt).toContain('AGENTS.md');
+    expect(prompt).toContain('# 用户协议');
+    expect(prompt).not.toContain('只回答“知识库不足”');
   });
 });

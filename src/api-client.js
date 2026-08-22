@@ -43,6 +43,8 @@ export class ApiError extends Error {
   static ASSISTANT_UNAVAILABLE = 'ASSISTANT_UNAVAILABLE';
   /** 智能助手上游超时（服务端 504）。 */
   static ASSISTANT_TIMEOUT = 'ASSISTANT_TIMEOUT';
+  /** User explicitly stopped the pending request. */
+  static CANCELED = 'CANCELED';
 
   constructor(code, message, { status = null, retryAfterSeconds = null } = {}) {
     super(message);
@@ -108,22 +110,17 @@ function daysInMonth(year, month) {
 }
 
 /**
- * Server allowlist mirror (manifest.ts RULES + path-policy.ts): the path
- * prefix `wiki/`, `outputs/` or `raw/` must match case-sensitively (the
- * server uses startsWith on the exact prefix), while the file extension
- * matches case-insensitively (the server lowercases the extension). This
- * mirrors the server exactly, so a hostile server emitting `WIKI/x.md` is
- * rejected here just as the real server would never emit it.
+ * Server allowlist mirror (manifest.ts RULES + path-policy.ts): every visible
+ * Markdown path in the vault is a document (including root AGENTS.md), while
+ * APK artifacts remain restricted to outputs/. Reserved segments are checked
+ * separately below.
  */
 const ALLOWLISTED_PATH_PATTERNS = [
-  /^wiki\/.+\.md$/i,
-  /^outputs\/.+\.md$/i,
+  /^(?:.+\/)?[^/]+\.md$/i,
   /^outputs\/.+\.apk$/i,
-  /^raw\/.+\.md$/i,
 ];
 
 function isAllowlistedPath(p) {
-  if (!/^(wiki|outputs|raw)\//.test(p)) return false;
   return ALLOWLISTED_PATH_PATTERNS.some((re) => re.test(p));
 }
 
@@ -155,8 +152,7 @@ function isValidIsoDatetime(value) {
 /**
  * Validates a normalized manifest relativePath: no empty/dot/hidden/_tmp/
  * node_modules segments (the latter two case-insensitively), no leading
- * slash/backslash, and an exact mirror of the server allowlist — the `wiki/`
- * / `outputs/` prefix is case-sensitive, the extension is not. The original
+ * slash/backslash, and an exact mirror of the server allowlist. The original
  * path casing is preserved.
  */
 function isValidRelativePath(p) {
@@ -278,7 +274,7 @@ export function createApiClient({
     }
   }
 
-  async function request(pathname, { method = 'GET', headers, body, allowedStatuses = [] } = {}) {
+  async function request(pathname, { method = 'GET', headers, body, allowedStatuses = [], signal: externalSignal } = {}) {
     let res;
     // Timeout guard: a request that neither completes nor errors (black-hole
     // route, stalled server) must not hold `sync()` in the download phase
@@ -286,6 +282,20 @@ export function createApiClient({
     // timeout fires even when an injected fetchImpl ignores `signal`.
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     let timer;
+    let removeExternalAbort = () => {};
+    const canceled = externalSignal
+      ? new Promise((_, reject) => {
+          const cancel = () => {
+            if (controller) controller.abort();
+            reject(new ApiError(ApiError.CANCELED, 'request canceled'));
+          };
+          if (externalSignal.aborted) cancel();
+          else {
+            externalSignal.addEventListener('abort', cancel, { once: true });
+            removeExternalAbort = () => externalSignal.removeEventListener('abort', cancel);
+          }
+        })
+      : null;
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(() => {
         if (controller) controller.abort();
@@ -293,7 +303,7 @@ export function createApiClient({
       }, timeoutMs);
     });
     try {
-      res = await Promise.race([
+      const pending = [
         fetchImpl(origin + pathname, {
           method,
           headers,
@@ -301,7 +311,9 @@ export function createApiClient({
           ...(controller ? { signal: controller.signal } : {}),
         }),
         timeout,
-      ]);
+      ];
+      if (canceled) pending.push(canceled);
+      res = await Promise.race(pending);
     } catch (err) {
       // Timeout (NETWORK) and any transport failure both map to NETWORK; never
       // leak the underlying error (it may carry a URL or credentials).
@@ -309,6 +321,7 @@ export function createApiClient({
       throw new ApiError(ApiError.NETWORK, 'network request failed');
     } finally {
       if (timer) clearTimeout(timer);
+      removeExternalAbort();
     }
     if (res.status === 304) return res;
     // Callers may opt out of the standard status mapping for a specific set
@@ -333,7 +346,10 @@ export function createApiClient({
   }
 
   async function getManifest() {
-    const res = await request('/v1/manifest', { headers: authHeaders() });
+    // Explicit capability negotiation keeps pre-2.4.1 clients on the legacy
+    // wiki/outputs/raw projection so they can still sync and download an APK
+    // upgrade. This client understands the complete folder hierarchy.
+    const res = await request('/v1/manifest?scope=full-vault-v1', { headers: authHeaders() });
 
     // Mirror the getDocument() cap pattern: reject on the declared
     // content-length before reading, then enforce the real UTF-8 byte count
@@ -423,13 +439,14 @@ export function createApiClient({
    * oldest first, excluding the current question itself. Pass [] for a fresh
    * conversation (or to omit context entirely).
    */
-  async function askQuestion(question, knowledge = [], history = []) {
+  async function askQuestion(question, knowledge = [], history = [], agentInstructions = '', { signal } = {}) {
     const res = await request('/v1/ask', {
       method: 'POST',
       // Fastify 只解析带 Content-Type: application/json 的 body——缺失会 400/415。
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: { question, knowledge, history },
+      body: { question, knowledge, history, ...(agentInstructions ? { agentInstructions } : {}) },
       allowedStatuses: [503, 504],
+      signal,
     });
     if (res.status === 503) {
       throw new ApiError(ApiError.ASSISTANT_UNAVAILABLE, 'assistant not configured', { status: 503 });

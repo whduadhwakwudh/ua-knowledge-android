@@ -1,0 +1,100 @@
+- generic [ref=e4]:
+  - main [ref=e6]:
+    - generic [ref=e7]:
+      - button "打开侧边栏" [ref=e8] [cursor=pointer]
+      - generic [ref=e11]:
+        - paragraph [ref=e12]: 8/22周六 · 离线可用
+        - heading "知识库" [level=1] [ref=e13]
+      - button "我的" [ref=e14] [cursor=pointer]
+    - searchbox "搜索全部笔记" [ref=e21]
+    - generic [ref=e56]:
+      - generic [ref=e57]:
+        - generic [ref=e58]: 尚未同步
+        - generic [ref=e59]: 连接设备后即可拉取内容
+      - button "立即同步" [ref=e60] [cursor=pointer]
+    - generic [ref=e30]:
+      - generic [ref=e31]:
+        - heading "最近笔记" [level=2] [ref=e32]
+        - generic [ref=e33]:
+          - generic [ref=e34]: 1 篇
+          - button "换一批随机排序" [ref=e35] [cursor=pointer]: 换一批
+      - generic [ref=e61]:
+        - button "全部" [pressed] [ref=e62] [cursor=pointer]
+        - button "books" [ref=e63] [cursor=pointer]
+        - button "outputs" [ref=e64] [cursor=pointer]
+        - button "raw" [ref=e65] [cursor=pointer]
+        - button "wiki" [ref=e66] [cursor=pointer]
+      - generic [ref=e36]:
+        - navigation "文件夹路径" [ref=e37]:
+          - button "知识库" [ref=e67] [cursor=pointer]
+        - generic [ref=e68]:
+          - button "books 3" [ref=e69] [cursor=pointer]:
+            - generic [ref=e72]: books
+            - generic [ref=e73]: "3"
+          - button "outputs 8" [ref=e76] [cursor=pointer]:
+            - generic [ref=e79]: outputs
+            - generic [ref=e80]: "8"
+          - button "raw 73" [ref=e83] [cursor=pointer]:
+            - generic [ref=e86]: raw
+            - generic [ref=e87]: "73"
+          - button "wiki 12" [ref=e90] [cursor=pointer]:
+            - generic [ref=e93]: wiki
+            - generic [ref=e94]: "12"
+      - button "打开笔记：AGENTS.md" [ref=e98] [cursor=pointer]:
+        - generic [ref=e102]:
+          - heading "AGENTS.md" [level=3] [ref=e103]
+          - paragraph
+  - generic [ref=e104]:
+    - button "关闭侧边栏" [ref=e105] [cursor=pointer]
+    - complementary "分类导航" [ref=e106]:
+      - generic [ref=e107]:
+        - generic [ref=e108]:
+          - generic [ref=e109]: 个人知识库
+          - generic [ref=e110]: UA 2.4.3
+        - generic [ref=e111]: 知识库已连接
+      - paragraph [ref=e112]: 目录
+      - navigation "知识库目录" [ref=e113]:
+        - button "知识库 1" [pressed] [ref=e245] [cursor=pointer]:
+          - generic [ref=e249]: 知识库
+          - generic [ref=e250]: "1"
+        - generic [ref=e251]:
+          - button "展开 books" [ref=e252] [cursor=pointer]:
+            - generic [ref=e257]: books
+            - generic [ref=e258]: "3"
+          - button "进入 books 目录" [ref=e259] [cursor=pointer]
+        - button "outputs 8" [ref=e263] [cursor=pointer]:
+          - generic [ref=e267]: outputs
+          - generic [ref=e268]: "8"
+        - generic [ref=e269]:
+          - button "收起 raw" [expanded] [ref=e270] [cursor=pointer]:
+            - generic [ref=e275]: raw
+            - generic [ref=e276]: "73"
+          - button "进入 raw 目录" [ref=e277] [cursor=pointer]
+        - generic [ref=e280]:
+          - button "收起 douyin" [expanded] [ref=e281] [cursor=pointer]:
+            - generic [ref=e286]: douyin
+            - generic [ref=e287]: "28"
+          - button "进入 douyin 目录" [ref=e288] [cursor=pointer]
+        - button "作者A 12" [ref=e292] [cursor=pointer]:
+          - generic [ref=e296]: 作者A
+          - generic [ref=e297]: "12"
+        - button "github 18" [ref=e299] [cursor=pointer]:
+          - generic [ref=e303]: github
+          - generic [ref=e304]: "18"
+        - button "bilibili 9" [ref=e306] [cursor=pointer]:
+          - generic [ref=e310]: bilibili
+          - generic [ref=e311]: "9"
+        - generic [ref=e312]:
+          - button "展开 wiki" [ref=e313] [cursor=pointer]:
+            - generic [ref=e318]: wiki
+            - generic [ref=e319]: "12"
+          - button "进入 wiki 目录" [ref=e320] [cursor=pointer]
+      - generic [ref=e161]:
+        - button "同步" [ref=e162] [cursor=pointer]
+        - button "连接设置" [ref=e168] [cursor=pointer]
+  - navigation "主导航" [ref=e39]:
+    - button "首页" [ref=e40] [cursor=pointer]
+    - button "收藏" [ref=e44] [cursor=pointer]
+    - button "助手" [ref=e47] [cursor=pointer]
+    - button "我的" [ref=e51] [cursor=pointer]
+  - status

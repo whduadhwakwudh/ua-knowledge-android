@@ -26,6 +26,7 @@ import { mountApp } from './ui.js';
 import { downloadAndVerifyApk } from './apk-download.js';
 import { createLlmClient, LlmError } from './llm-client.js';
 import { downloadFile } from './file-download.js';
+import { buildFolderTree, documentsDirectlyIn, findFolder } from './folder-tree.js';
 
 export function createAppState() {
   return {
@@ -64,9 +65,11 @@ function blankRuntimeState() {
     category: 'all',
     categories: [],
     allDocuments: [],
+    folderTree: buildFolderTree([]),
     // 智能助手：对话历史（本地 IndexedDB）与提问状态。
     assistantMessages: [],
     assistantAsking: false,
+    assistantTrace: [],
     // 手机内置助手：LLM API Key（安全存储），有 key 时助手直连 LLM，不依赖服务器。
     llmApiKey: null,
     // 文件传输（电脑文件夹 → 手机下载）。
@@ -195,6 +198,7 @@ export async function bootstrapApp(options = {}) {
   let engine = null;
   let search = null;
   let llmClient = null;
+  let currentAskController = null;
   let allDocuments = [];
   let allArtifacts = [];
   let docById = new Map();
@@ -223,10 +227,11 @@ export async function bootstrapApp(options = {}) {
   /** 当前应展示的文档列表：搜索态按相关度，浏览态按分类过滤 + 随机洗牌。 */
   function visibleDocuments() {
     if (state.query.trim()) return applySearch(state.query);
-    const base =
-      state.category === 'all'
-        ? allDocuments
-        : allDocuments.filter((d) => d.label === state.category);
+    // 根目录保留原有“全部笔记”阅读流，同时展示文件夹入口；进入任一
+    // 文件夹后只列出该层的直接文档，避免把深层结构重新拍平。
+    const base = state.category === 'all'
+      ? allDocuments
+      : documentsDirectlyIn(allDocuments, state.category);
     return shuffleArray(base, rng);
   }
 
@@ -242,6 +247,7 @@ export async function bootstrapApp(options = {}) {
         const text = await db.getDocumentText(entry.sha256);
         const doc = {
           id: entry.id,
+          kind: 'document',
           title: entry.title,
           excerpt: excerptOf(text),
           label: topDirOf(entry.relativePath),
@@ -257,6 +263,7 @@ export async function bootstrapApp(options = {}) {
       } else {
         const art = {
           id: entry.id,
+          kind: 'artifact',
           title: entry.title,
           relativePath: entry.relativePath,
           sha256: entry.sha256,
@@ -297,11 +304,10 @@ export async function bootstrapApp(options = {}) {
     }
     backlinkIndex = nextBacklinks;
 
-    // 分类：有文档的顶层目录，wiki/outputs 优先，其余按名称排序。
-    const categories = [];
-    for (const d of docs) {
-      if (!categories.includes(d.label)) categories.push(d.label);
-    }
+    // 目录树：严格按 manifest 相对路径复刻电脑端层级；根目录文档（如
+    // AGENTS.md）留在根节点，不伪装成一个分类。
+    const folderTree = buildFolderTree([...docs, ...arts]);
+    const categories = folderTree.folders.map((folder) => folder.path);
     const preferred = ['wiki', 'outputs'];
     categories.sort((a, b) => {
       const ia = preferred.indexOf(a);
@@ -314,7 +320,8 @@ export async function bootstrapApp(options = {}) {
       return a.localeCompare(b);
     });
     state.categories = categories;
-    if (state.category !== 'all' && !categories.includes(state.category)) {
+    state.folderTree = folderTree;
+    if (state.category !== 'all' && !findFolder(folderTree, state.category)) {
       state.category = 'all';
     }
 
@@ -429,9 +436,13 @@ export async function bootstrapApp(options = {}) {
         }
       }
     }
-    // 横屏分栏：同分类笔记列表。
+    // 横屏分栏：同一实际目录中的笔记列表。
+    const parentPath = doc.relativePath.includes('/') ? doc.relativePath.slice(0, doc.relativePath.lastIndexOf('/')) : '';
     const siblings = allDocuments
-      .filter((d) => d.label === doc.label)
+      .filter((d) => {
+        const parent = d.relativePath.includes('/') ? d.relativePath.slice(0, d.relativePath.lastIndexOf('/')) : '';
+        return parent === parentPath;
+      })
       .map((d) => ({ id: d.id, title: d.title }));
     // 详情页内跳转（双链/反向链接）时压栈，返回键可回到上一笔记；
     // restore（从返回栈恢复）时不重复压栈。
@@ -545,8 +556,10 @@ export async function bootstrapApp(options = {}) {
     state.category = 'all';
     state.categories = [];
     state.allDocuments = [];
+    state.folderTree = buildFolderTree([]);
     state.assistantMessages = [];
     state.assistantAsking = false;
+    state.assistantTrace = [];
     state.llmApiKey = null;
     state.filesList = [];
     state.fileDownloadingId = null;
@@ -678,6 +691,18 @@ export async function bootstrapApp(options = {}) {
     const userMsg = { role: 'user', text: trimmed, createdAt: new Date().toISOString() };
     state.assistantMessages = [...(state.assistantMessages ?? []), userMsg];
     state.assistantAsking = true;
+    const agentDoc = allDocuments.find((doc) => String(doc.relativePath).toLowerCase() === 'agents.md');
+    const agentInstructions = agentDoc?.text ?? '';
+    const knowledge = retrieveKnowledge(trimmed).filter((chunk) => chunk.relativePath.toLowerCase() !== 'agents.md');
+    state.assistantTrace = [
+      {
+        label: agentInstructions ? '已完整读取 AGENTS.md' : '未找到 AGENTS.md，按通用助手模式继续',
+        status: 'done',
+      },
+      { label: `已检索 ${knowledge.length} 条相关知识`, status: 'done' },
+      { label: '模型正在生成回答', status: 'active' },
+    ];
+    currentAskController = new AbortController();
     try {
       await db.addAssistantMessage(userMsg);
     } catch {
@@ -685,7 +710,6 @@ export async function bootstrapApp(options = {}) {
     }
     ui.update(state);
     try {
-      const knowledge = retrieveKnowledge(trimmed);
       // 上下文：当前对话的历史（不含刚追加的最新 user 消息），旧→新。
       // 内置助手（直连 DeepSeek）与服务端 /v1/ask 都支持 history，
       // 使同一对话内的问题互相关联；新建对话（clearChat）后 history 为空 → 隔离。
@@ -693,9 +717,19 @@ export async function bootstrapApp(options = {}) {
         .filter((m) => m !== userMsg && (m.role === 'user' || m.role === 'assistant') && typeof m.text === 'string' && m.text.trim() !== '')
         .map((m) => ({ role: m.role, content: m.text }));
       const { answer } = llmClient
-        ? await llmClient.ask(trimmed, knowledge, history)
-        : await api.askQuestion(trimmed, knowledge, history);
-      const reply = { role: 'assistant', text: answer, createdAt: new Date().toISOString() };
+        ? await llmClient.ask(trimmed, knowledge, history, {
+            agentInstructions,
+            signal: currentAskController.signal,
+          })
+        : await api.askQuestion(trimmed, knowledge, history, agentInstructions, {
+            signal: currentAskController.signal,
+          });
+      const completedTrace = state.assistantTrace.map((step) => ({
+        ...step,
+        status: 'done',
+        label: step.status === 'active' ? '模型已生成回答' : step.label,
+      }));
+      const reply = { role: 'assistant', text: answer, trace: completedTrace, createdAt: new Date().toISOString() };
       state.assistantMessages = [...state.assistantMessages, reply];
       try {
         await db.addAssistantMessage(reply);
@@ -703,7 +737,9 @@ export async function bootstrapApp(options = {}) {
         // 同上。
       }
     } catch (err) {
-      if (err && (err instanceof LlmError ? err.code === 'not_configured' : err.code === ApiError.ASSISTANT_UNAVAILABLE)) {
+      if (err && (err.code === 'cancelled' || err.code === ApiError.CANCELED)) {
+        // 用户主动停止：不添加错误气泡，也不接受迟到结果。
+      } else if (err && (err instanceof LlmError ? err.code === 'not_configured' : err.code === ApiError.ASSISTANT_UNAVAILABLE)) {
         ui.toast('助手未配置，请先填写 API Key');
       } else if (err && (err instanceof LlmError ? err.code === 'timeout' : err.code === ApiError.ASSISTANT_TIMEOUT)) {
         ui.toast('回答超时，请重试');
@@ -721,11 +757,23 @@ export async function bootstrapApp(options = {}) {
       }
     } finally {
       state.assistantAsking = false;
+      currentAskController = null;
       ui.update(state);
     }
   }
 
+  function stopQuestion() {
+    if (!state.assistantAsking || !currentAskController) return;
+    state.assistantTrace = (state.assistantTrace ?? []).map((step) =>
+      step.status === 'active' ? { label: '回答已由用户停止', status: 'stopped' } : step,
+    );
+    currentAskController.abort();
+    ui.toast('已停止回答');
+    ui.update(state);
+  }
+
   async function clearChat() {
+    if (currentAskController) currentAskController.abort();
     state.assistantMessages = [];
     try {
       await db.clearAssistantMessages();
@@ -830,6 +878,9 @@ export async function bootstrapApp(options = {}) {
     },
     onSendQuestion: (question) => {
       sendQuestion(question);
+    },
+    onStopQuestion: () => {
+      stopQuestion();
     },
     onClearChat: () => {
       clearChat();

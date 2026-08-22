@@ -154,7 +154,7 @@ describe('getManifest()', () => {
     });
   }
 
-  it('GETs /v1/manifest with exactly one Authorization header and returns the full validated manifest shape', async () => {
+  it('requests the full-vault manifest scope with exactly one Authorization header', async () => {
     let captured;
     const client = createApiClient({
       baseUrl: BASE,
@@ -165,7 +165,7 @@ describe('getManifest()', () => {
       },
     });
     const result = await client.getManifest();
-    expect(captured.url).toBe(`${BASE}/v1/manifest`);
+    expect(captured.url).toBe(`${BASE}/v1/manifest?scope=full-vault-v1`);
     expect(captured.opts.method).toBe('GET');
     const authKeys = authHeaderEntries(captured.opts);
     expect(authKeys).toHaveLength(1);
@@ -239,6 +239,8 @@ describe('getManifest()', () => {
 
   it('accepts valid document and artifact entries across the whole allowlist', async () => {
     const variants = [
+      { relativePath: 'AGENTS.md', kind: 'document', mime: 'text/markdown; charset=utf-8' },
+      { relativePath: 'books/guide/chapter.md', kind: 'document', mime: 'text/markdown; charset=utf-8' },
       { relativePath: 'wiki/a.md', kind: 'document', mime: 'text/markdown; charset=utf-8' },
       { relativePath: 'wiki/sub/deep/note.md', kind: 'document', mime: 'text/markdown; charset=utf-8' },
       { relativePath: 'outputs/report.md', kind: 'document', mime: 'text/markdown; charset=utf-8' },
@@ -255,17 +257,6 @@ describe('getManifest()', () => {
       const client = clientWith({ ...validManifest, entries: [{ ...validEntry, ...v }] });
       await expect(client.getManifest(), `entry=${JSON.stringify(v)}`).resolves.toMatchObject({
         entries: [expect.objectContaining(v)],
-      });
-    }
-  });
-
-  it('rejects uppercase allowlist prefixes (mirrors the server startsWith semantics)', async () => {
-    // The server matches the `wiki/` / `outputs/` prefix case-sensitively;
-    // the client must reject entries a real server could never emit.
-    for (const relativePath of ['WIKI/a.md', 'Outputs/report.md', 'WIKI/sub/a.md']) {
-      const client = clientWith({ ...validManifest, entries: [{ ...validEntry, relativePath }] });
-      await expect(client.getManifest(), `entry=${relativePath}`).rejects.toMatchObject({
-        code: ApiError.SCHEMA,
       });
     }
   });
@@ -366,7 +357,6 @@ describe('getManifest()', () => {
       '../../etc/passwd',
       '/abs/path.md',
       'a\\b.md',
-      'books/x.md',
       'wiki/x.txt',
       'wiki/x.apk',
       'wiki/x',
@@ -899,7 +889,8 @@ describe('askQuestion()', () => {
       },
     });
     const knowledge = [{ title: 't', excerpt: 'e', relativePath: 'wiki/a.md' }];
-    const result = await client.askQuestion('知识库在哪？', knowledge);
+    const agentInstructions = '# AGENTS\n按仓库协议执行。';
+    const result = await client.askQuestion('知识库在哪？', knowledge, [], agentInstructions);
     expect(result.answer).toBe('知识库在 wiki/ 下。');
     expect(captured.url).toBe(`${BASE}/v1/ask`);
     expect(captured.opts.method).toBe('POST');
@@ -907,7 +898,7 @@ describe('askQuestion()', () => {
     const headerEntries = Object.keys(captured.opts.headers).map((k) => k.toLowerCase());
     expect(headerEntries).toContain('content-type');
     expect(captured.opts.headers['content-type'] ?? captured.opts.headers['Content-Type']).toContain('application/json');
-    expect(JSON.parse(captured.opts.body)).toEqual({ question: '知识库在哪？', knowledge, history: [] });
+    expect(JSON.parse(captured.opts.body)).toEqual({ question: '知识库在哪？', knowledge, history: [], agentInstructions });
     expect(authHeaderEntries(captured.opts).length).toBe(1);
   });
 
@@ -947,6 +938,19 @@ describe('askQuestion()', () => {
     await client.askQuestion('hi');
     expect(String(captured.opts.body)).not.toContain(FAKE_TOKEN);
     expect(String(captured.url)).not.toContain(FAKE_TOKEN);
+  });
+
+  it('aborts a pending assistant request with CANCELED', async () => {
+    const controller = new AbortController();
+    const client = createApiClient({
+      baseUrl: BASE,
+      token: FAKE_TOKEN,
+      fetchImpl: async () => new Promise(() => {}),
+      timeoutMs: 5_000,
+    });
+    const pending = client.askQuestion('stop', [], [], '', { signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ code: ApiError.CANCELED });
   });
 
   it('maps 503 to ASSISTANT_UNAVAILABLE', async () => {

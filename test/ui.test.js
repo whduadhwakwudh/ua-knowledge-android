@@ -4,6 +4,7 @@ import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { clampReadScale, mountApp } from '../src/ui.js';
 import { renderMarkdown } from '../src/markdown.js';
+import { buildFolderTree } from '../src/folder-tree.js';
 
 /**
  * UI wiring tests — the REAL shipped shell (www/index.html) is loaded into a
@@ -76,7 +77,7 @@ function baseState(overrides = {}) {
 function mountDOM(wiringOverrides = {}) {
   const dom = new JSDOM(INDEX_HTML, { url: 'https://local.test/' });
   const container = dom.window.document.querySelector('#screen');
-  const calls = { sync: 0, open: [], fav: [], conn: [], query: [], dl: [], close: [], tab: [], cat: [], shuffle: 0, send: [], clearChat: 0, wiki: [], files: 0, downloadFile: [] };
+  const calls = { sync: 0, open: [], fav: [], conn: [], query: [], dl: [], close: [], tab: [], cat: [], shuffle: 0, send: [], stop: 0, clearChat: 0, wiki: [], files: 0, downloadFile: [] };
   const wiring = {
     onSync: () => {
       calls.sync += 1;
@@ -110,6 +111,9 @@ function mountDOM(wiringOverrides = {}) {
     },
     onSendQuestion: (q) => {
       calls.send.push(q);
+    },
+    onStopQuestion: () => {
+      calls.stop += 1;
     },
     onClearChat: () => {
       calls.clearChat += 1;
@@ -412,7 +416,7 @@ describe('mountApp — assistant chat', () => {
     // 顶栏标题严格居中（topbar-center），右侧仅新建对话按钮。
     expect($id(container, 'view-assistant').querySelector('.topbar-center .topbar-title')).toBeTruthy();
     expect(isHidden($id(container, 'chat-empty-wrap'))).toBe(false);
-    expect($id(container, 'chat-empty').textContent).toContain('模型通用知识');
+    expect($id(container, 'chat-empty').textContent).toContain('AGENTS.md');
   });
 
   it('renders user and assistant bubbles from history (markdown-rendered answer)', () => {
@@ -421,7 +425,12 @@ describe('mountApp — assistant chat', () => {
       baseState({
         assistantMessages: [
           { role: 'user', text: '怎么同步？', createdAt: '2026-01-01T00:00:00.000Z' },
-          { role: 'assistant', text: '点**立即同步**即可。', createdAt: '2026-01-01T00:00:01.000Z' },
+          {
+            role: 'assistant',
+            text: '点**立即同步**即可。',
+            trace: [{ label: '已读取 AGENTS.md', status: 'done' }],
+            createdAt: '2026-01-01T00:00:01.000Z',
+          },
         ],
       }),
     );
@@ -429,6 +438,7 @@ describe('mountApp — assistant chat', () => {
     expect(isHidden($id(container, 'chat-empty-wrap'))).toBe(true);
     expect(container.querySelector('.chat-msg.user').textContent).toContain('怎么同步？');
     expect(container.querySelector('.chat-msg.assistant strong').textContent).toBe('立即同步');
+    expect(container.querySelector('.chat-msg.assistant .assistant-trace').textContent).toContain('已读取 AGENTS.md');
   });
 
   it('sending a question fires onSendQuestion with the trimmed text and clears the input', () => {
@@ -456,12 +466,28 @@ describe('mountApp — assistant chat', () => {
   });
 
   it('shows the typing indicator and disables the input while asking', () => {
-    const { container, ui } = mountDOM();
+    const { container, ui, calls } = mountDOM();
     ui.update(baseState({ assistantAsking: true }));
     container.querySelector('[data-tab="assistant"]').click();
     expect(container.querySelector('.chat-msg.typing')).toBeTruthy();
     expect($id(container, 'chat-input').disabled).toBe(true);
-    expect($id(container, 'chat-send').disabled).toBe(true);
+    expect($id(container, 'chat-send').disabled).toBe(false);
+    expect($id(container, 'chat-send').getAttribute('aria-label')).toBe('停止回答');
+    $id(container, 'chat-send').click();
+    expect(calls.stop).toBe(1);
+  });
+
+  it('shows a safe execution trace instead of hidden chain-of-thought text', () => {
+    const { container, ui } = mountDOM();
+    ui.update(baseState({
+      assistantAsking: true,
+      assistantTrace: [
+        { label: '已读取 AGENTS.md', status: 'done' },
+        { label: '正在检索知识库', status: 'active' },
+      ],
+    }));
+    expect(container.querySelector('.assistant-trace').textContent).toContain('已读取 AGENTS.md');
+    expect(container.querySelector('.assistant-trace').textContent).toContain('正在检索知识库');
   });
 
   it('new-chat button (top bar) fires onClearChat', () => {
@@ -970,6 +996,93 @@ describe('mountApp — tabs, theme, sheets and toast', () => {
     const { container, ui } = mountDOM();
     ui.update(baseState());
     expect($id(container, 'home-greeting').textContent.trim().length).toBeGreaterThan(0);
+  });
+});
+
+describe('mountApp — hierarchical vault folders', () => {
+  it('renders only the first level and expands nested folders one level at a time', () => {
+    const { container, ui, calls } = mountDOM();
+    const allDocuments = [
+      docFixture('agents', { title: 'AGENTS', label: '', relativePath: 'AGENTS.md' }),
+      docFixture('index', { label: 'wiki', relativePath: 'wiki/index.md' }),
+      docFixture('topic', { label: 'wiki', relativePath: 'wiki/topic/a.md' }),
+      docFixture('video', { label: 'raw', relativePath: 'raw/douyin/creator/video.md' }),
+    ];
+    const folderTree = buildFolderTree(allDocuments);
+    ui.update(baseState({
+      documents: [allDocuments[0]],
+      allDocuments,
+      folderTree,
+      category: 'all',
+      categories: ['raw', 'wiki'],
+    }));
+
+    expect(container.querySelector('#folder-list [data-category="raw"]')).toBeTruthy();
+    expect(container.querySelector('#sidebar-cats [data-category="raw"]')).toBeTruthy();
+    expect(container.querySelector('#sidebar-cats [data-category="raw/douyin"]')).toBeNull();
+
+    const rawToggle = container.querySelector('#sidebar-cats [data-folder-toggle="raw"]');
+    expect(rawToggle.querySelector('.cat-name').textContent).toBe('raw');
+    rawToggle.click();
+    expect(container.querySelector('#sidebar-cats [data-category="raw/douyin"]')).toBeTruthy();
+    expect(container.querySelector('#sidebar-cats [data-category="raw/douyin/creator"]')).toBeNull();
+    expect(calls.cat).toEqual([]);
+
+    container.querySelector('#sidebar-cats [data-folder-toggle="raw/douyin"]').click();
+    expect(container.querySelector('#sidebar-cats [data-category="raw/douyin/creator"]')).toBeTruthy();
+
+    container.querySelector('#sidebar-cats [data-folder-toggle="wiki"]').click();
+    expect(container.querySelector('#sidebar-cats [data-category="raw/douyin"]')).toBeNull();
+    expect(container.querySelector('#sidebar-cats [data-category="wiki/topic"]')).toBeTruthy();
+
+    container.querySelector('#sidebar-cats [data-folder-toggle="wiki"]').click();
+    container.querySelector('#sidebar-cats [data-folder-toggle="raw"]').click();
+    expect(container.querySelector('#sidebar-cats [data-category="raw/douyin"]')).toBeTruthy();
+    expect(container.querySelector('#sidebar-cats [data-category="raw/douyin/creator"]')).toBeNull();
+
+    $id(container, 'btn-menu').click();
+    container.querySelector('#sidebar-cats [data-open-folder="raw"]').click();
+    expect(calls.cat).toEqual(['raw']);
+    expect(ui.isSidebarOpen()).toBe(false);
+
+    container.querySelector('#folder-list [data-category="wiki"]').click();
+    expect(calls.cat).toEqual(['raw', 'wiki']);
+  });
+
+  it('always opens at the compact first level even when the active folder is deeply nested', () => {
+    const { container, ui } = mountDOM();
+    const docs = [docFixture('video', { label: 'raw', relativePath: 'raw/douyin/creator/video.md' })];
+    ui.update(baseState({
+      documents: docs,
+      allDocuments: docs,
+      folderTree: buildFolderTree(docs),
+      category: 'raw/douyin/creator',
+    }));
+
+    expect(container.querySelector('#sidebar-cats [data-category="raw"]')).toBeTruthy();
+    expect(container.querySelector('#sidebar-cats [data-category="raw/douyin"]')).toBeNull();
+  });
+
+  it('resets expanded branches whenever the sidebar is opened again', () => {
+    const { container, ui } = mountDOM();
+    const docs = [docFixture('video', { label: 'raw', relativePath: 'raw/douyin/creator/video.md' })];
+    ui.update(baseState({ documents: docs, allDocuments: docs, folderTree: buildFolderTree(docs), category: 'all' }));
+
+    $id(container, 'btn-menu').click();
+    container.querySelector('#sidebar-cats [data-folder-toggle="raw"]').click();
+    expect(container.querySelector('#sidebar-cats [data-category="raw/douyin"]')).toBeTruthy();
+
+    $id(container, 'sidebar-scrim').click();
+    $id(container, 'btn-menu').click();
+    expect(container.querySelector('#sidebar-cats [data-category="raw/douyin"]')).toBeNull();
+  });
+
+  it('renders breadcrumbs for the currently opened nested folder', () => {
+    const { container, ui } = mountDOM();
+    const docs = [docFixture('video', { label: 'raw', relativePath: 'raw/douyin/creator/video.md' })];
+    ui.update(baseState({ documents: docs, allDocuments: docs, folderTree: buildFolderTree(docs), category: 'raw/douyin/creator' }));
+    const crumbs = [...container.querySelectorAll('#folder-breadcrumbs [data-category]')];
+    expect(crumbs.map((c) => c.dataset.category)).toEqual(['all', 'raw', 'raw/douyin', 'raw/douyin/creator']);
   });
 });
 

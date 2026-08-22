@@ -1,0 +1,97 @@
+- generic [ref=e4]:
+  - main [ref=e6]:
+    - generic [ref=e7]:
+      - button "打开侧边栏" [ref=e8] [cursor=pointer]
+      - generic [ref=e11]:
+        - paragraph [ref=e12]: 8/22周六 · 离线可用
+        - heading "知识库" [level=1] [ref=e13]
+      - button "我的" [ref=e14] [cursor=pointer]
+    - searchbox "搜索全部笔记" [ref=e21]
+    - generic [ref=e56]:
+      - generic [ref=e57]:
+        - generic [ref=e58]: 尚未同步
+        - generic [ref=e59]: 连接设备后即可拉取内容
+      - button "立即同步" [ref=e60] [cursor=pointer]
+    - generic [ref=e30]:
+      - generic [ref=e31]:
+        - heading "最近笔记" [level=2] [ref=e32]
+        - generic [ref=e33]:
+          - generic [ref=e34]: 1 篇
+          - button "换一批随机排序" [ref=e35] [cursor=pointer]: 换一批
+      - generic [ref=e61]:
+        - button "全部" [pressed] [ref=e62] [cursor=pointer]
+        - button "books" [ref=e63] [cursor=pointer]
+        - button "outputs" [ref=e64] [cursor=pointer]
+        - button "raw" [ref=e65] [cursor=pointer]
+        - button "wiki" [ref=e66] [cursor=pointer]
+      - generic [ref=e36]:
+        - navigation "文件夹路径" [ref=e37]:
+          - button "知识库" [ref=e67] [cursor=pointer]
+        - generic [ref=e68]:
+          - button "books 3" [ref=e69] [cursor=pointer]:
+            - generic [ref=e72]: books
+            - generic [ref=e73]: "3"
+          - button "outputs 8" [ref=e76] [cursor=pointer]:
+            - generic [ref=e79]: outputs
+            - generic [ref=e80]: "8"
+          - button "raw 73" [ref=e83] [cursor=pointer]:
+            - generic [ref=e86]: raw
+            - generic [ref=e87]: "73"
+          - button "wiki 12" [ref=e90] [cursor=pointer]:
+            - generic [ref=e93]: wiki
+            - generic [ref=e94]: "12"
+      - button "打开笔记：AGENTS.md" [ref=e98] [cursor=pointer]:
+        - generic [ref=e102]:
+          - heading "AGENTS.md" [level=3] [ref=e103]
+          - paragraph
+  - generic [ref=e104]:
+    - button "关闭侧边栏" [ref=e105] [cursor=pointer]
+    - complementary "分类导航" [ref=e106]:
+      - generic [ref=e107]:
+        - generic [ref=e108]:
+          - generic [ref=e109]: 个人知识库
+          - generic [ref=e110]: UA 2.4.3
+        - generic [ref=e111]: 知识库已连接
+      - paragraph [ref=e112]: 目录
+      - navigation "知识库目录" [ref=e113]:
+        - button "知识库 1" [pressed] [ref=e173] [cursor=pointer]:
+          - generic [ref=e177]: 知识库
+          - generic [ref=e178]: "1"
+        - generic [ref=e179]:
+          - button "展开 books" [ref=e180] [cursor=pointer]:
+            - generic [ref=e185]: books
+            - generic [ref=e186]: "3"
+          - button "进入 books 目录" [ref=e187] [cursor=pointer]
+        - button "outputs 8" [ref=e191] [cursor=pointer]:
+          - generic [ref=e195]: outputs
+          - generic [ref=e196]: "8"
+        - generic [ref=e197]:
+          - button "收起 raw" [expanded] [ref=e198] [cursor=pointer]:
+            - generic [ref=e203]: raw
+            - generic [ref=e204]: "73"
+          - button "进入 raw 目录" [ref=e205] [cursor=pointer]
+        - generic [ref=e208]:
+          - button "展开 douyin" [ref=e209] [cursor=pointer]:
+            - generic [ref=e214]: douyin
+            - generic [ref=e215]: "28"
+          - button "进入 douyin 目录" [ref=e216] [cursor=pointer]
+        - button "github 18" [ref=e220] [cursor=pointer]:
+          - generic [ref=e224]: github
+          - generic [ref=e225]: "18"
+        - button "bilibili 9" [ref=e227] [cursor=pointer]:
+          - generic [ref=e231]: bilibili
+          - generic [ref=e232]: "9"
+        - generic [ref=e233]:
+          - button "展开 wiki" [ref=e234] [cursor=pointer]:
+            - generic [ref=e239]: wiki
+            - generic [ref=e240]: "12"
+          - button "进入 wiki 目录" [ref=e241] [cursor=pointer]
+      - generic [ref=e161]:
+        - button "同步" [ref=e162] [cursor=pointer]
+        - button "连接设置" [ref=e168] [cursor=pointer]
+  - navigation "主导航" [ref=e39]:
+    - button "首页" [ref=e40] [cursor=pointer]
+    - button "收藏" [ref=e44] [cursor=pointer]
+    - button "助手" [ref=e47] [cursor=pointer]
+    - button "我的" [ref=e51] [cursor=pointer]
+  - status
